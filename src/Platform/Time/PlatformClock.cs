@@ -25,7 +25,7 @@ public static unsafe class PlatformClock
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long NowMs(PlatformClockBlock* clock)
     {
-        if (clock == null || clock->IsManual == 0)
+        if ((nuint)clock < 4096 || clock->IsManual == 0)
         {
             return NativeTsc.NowMs();
         }
@@ -48,5 +48,13 @@ public static unsafe class PlatformClock
     {
         long current = Volatile.Read(ref clock->UtcEpochNs);
         SetManualTime(clock, current + (delta.Ticks * 100L));
+    }
+
+    /// <summary>
+    /// Restores the clock block back to live hardware sampling mode.
+    /// </summary>
+    public static void ResetToLive(PlatformClockBlock* clock)
+    {
+        Volatile.Write(ref clock->IsManual, 0);
     }
 }

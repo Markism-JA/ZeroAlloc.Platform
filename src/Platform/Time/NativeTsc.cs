@@ -42,6 +42,12 @@ public static unsafe class NativeTsc
     private static TscAnchor _anchor;
     private static System.Threading.Timer? _syncTimer;
 
+    /// <summary>
+    /// True if direct hardware RDTSC sampling is active (x64 with executable page allocation);
+    /// false when running on the UTC-anchored <see cref="Stopwatch"/> fallback (ARM64 or W^X restricted).
+    /// </summary>
+    public static bool IsHardwareTscActive => IsSupported;
+
     static NativeTsc()
     {
         FallbackStopwatchAnchorTicks = Stopwatch.GetTimestamp();
@@ -74,12 +80,12 @@ public static unsafe class NativeTsc
 #endif
 
         // Initial calibration
-        CalibrateAnchor();
+        CalibrateAnchor(isInitial: true);
         IsSupported = true;
 
         // Periodically realign anchors with the OS wall-clock every 10 seconds (0% CPU impact)
         _syncTimer = new System.Threading.Timer(
-            _ => CalibrateAnchor(),
+            _ => CalibrateAnchor(isInitial: false),
             null,
             TimeSpan.FromSeconds(10),
             TimeSpan.FromSeconds(10)
@@ -106,12 +112,13 @@ public static unsafe class NativeTsc
                 ulong multiplier = _anchor.Multiplier;
                 byte shift = _anchor.Shift;
 
+                // x86-64 TSO guarantees LoadLoad ordering in hardware; Volatile.Read provides the compiler fence.
                 int seq2 = Volatile.Read(ref _anchor.Sequence);
                 if (seq1 == seq2) // Read was consistent
                 {
                     ulong tsc = ReadTsc();
-                    ulong delta = tsc - baseTsc;
-                    return baseUtcNs + (long)((delta * multiplier) >> shift);
+                    ulong delta = tsc > baseTsc ? tsc - baseTsc : 0;
+                    return baseUtcNs + (long)MulShiftRight(delta, multiplier, shift);
                 }
 
                 Thread.SpinWait(2);
@@ -125,7 +132,31 @@ public static unsafe class NativeTsc
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long NowMs() => NowNs() / 1_000_000L;
 
-    private static void CalibrateAnchor()
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong MulShiftRight(ulong a, ulong b, byte shift)
+    {
+#if NET5_0_OR_GREATER
+        ulong hi = Math.BigMul(a, b, out ulong lo);
+        return (lo >> shift) | (hi << (64 - shift));
+#else
+        ulong aLo = (uint)a;
+        ulong aHi = a >> 32;
+        ulong bLo = (uint)b;
+        ulong bHi = b >> 32;
+
+        ulong p0 = aLo * bLo;
+        ulong p1 = aLo * bHi;
+        ulong p2 = aHi * bLo;
+        ulong p3 = aHi * bHi;
+
+        ulong mid = (p0 >> 32) + (uint)p1 + (uint)p2;
+        ulong lo = (p0 & 0xFFFF_FFFFUL) | (mid << 32);
+        ulong hi = p3 + (p1 >> 32) + (p2 >> 32) + (mid >> 32);
+        return (lo >> shift) | (hi << (64 - shift));
+#endif
+    }
+
+    private static void CalibrateAnchor(bool isInitial)
     {
         // 1. Measure TSC cycles over a 10ms window against high-resolution stopwatch
         long swStart = Stopwatch.GetTimestamp();
@@ -141,26 +172,41 @@ public static unsafe class NativeTsc
         ulong tscEnd = ReadTsc();
 
         double elapsedSeconds = (double)(swEnd - swStart) / Stopwatch.Frequency;
+        if (elapsedSeconds <= 0 || tscEnd <= tscStart)
+            return;
+
         double tscFrequencyHz = (tscEnd - tscStart) / elapsedSeconds;
 
         byte shift = 24;
         double factor = (1_000_000_000.0 / tscFrequencyHz) * (1 << shift);
         ulong multiplier = (ulong)Math.Round(factor);
 
-        // 2. Anchor directly to current UTC Unix Epoch
+        // 2. Anchor directly to current UTC Unix Epoch, clamping monotonically on recalibration
         ulong anchorTsc = ReadTsc();
         long anchorUtcNs = (DateTime.UtcNow.Ticks - DateTime.UnixEpoch.Ticks) * 100L;
+
+        if (!isInitial)
+        {
+            ulong prevDelta = anchorTsc > _anchor.BaseTsc ? anchorTsc - _anchor.BaseTsc : 0;
+            long prevProjectedNs =
+                _anchor.BaseUtcNs + (long)MulShiftRight(prevDelta, _anchor.Multiplier, _anchor.Shift);
+            if (anchorUtcNs < prevProjectedNs)
+            {
+                anchorUtcNs = prevProjectedNs;
+            }
+        }
 
         // 3. Seqlock write: odd sequence indicates mutation
         int seq = _anchor.Sequence;
         Volatile.Write(ref _anchor.Sequence, seq + 1);
+        Thread.MemoryBarrier();
 
         _anchor.BaseTsc = anchorTsc;
         _anchor.BaseUtcNs = anchorUtcNs;
         _anchor.Multiplier = multiplier;
         _anchor.Shift = shift;
 
-        // Even sequence indicates mutation complete
+        // Even sequence indicates mutation complete (release semantics)
         Volatile.Write(ref _anchor.Sequence, seq + 2);
     }
 

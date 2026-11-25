@@ -4,10 +4,13 @@ using Platform.Native.Windows.Enums;
 
 namespace Platform.Timer;
 
-public class HighResolutionTimerScope : IDisposable
+public sealed class HighResolutionTimerScope : IDisposable
 {
     private readonly bool _success;
     private readonly uint _periodMs;
+    private int _disposed;
+
+    public bool IsActive => _success && Volatile.Read(ref _disposed) == 0;
 
     public HighResolutionTimerScope(uint periodMs)
     {
@@ -26,6 +29,9 @@ public class HighResolutionTimerScope : IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
         if (_success && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             Winmm.TimeEndPeriod(_periodMs);

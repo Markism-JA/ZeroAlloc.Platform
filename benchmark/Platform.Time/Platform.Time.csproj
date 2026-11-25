@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
     <ProjectReference Include="..\..\src\Platform\Platform.csproj" />
     <ProjectReference Include="..\..\src\Platform.Benchmarking.Harness\Platform.Benchmarking.Harness.csproj" />
   </ItemGroup>
