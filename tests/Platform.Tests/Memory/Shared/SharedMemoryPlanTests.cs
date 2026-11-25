@@ -12,8 +12,20 @@ public sealed unsafe class SharedMemoryPlanTests
         RegionC = 0x43434343, // 'CCCC'
     }
 
+    private enum ByteTag : byte
+    {
+        First = 1,
+        Second = 2,
+    }
+
+    private enum UShortTag : ushort
+    {
+        Alpha = 0x1001,
+        Beta = 0x1002,
+    }
+
     [Fact]
-    public void CalculateTotalBytes_AlignsSuperblockAndPartitionsTo64Bytes()
+    public void CalculateTotalBytes_AlignsSuperblockToSystemPageAndPartitionsTo64Bytes()
     {
         var plan = new SharedMemoryPlan()
             .AddRegion(TestTags.RegionA, byteCount: 100, alignment: 64)
@@ -21,11 +33,42 @@ public sealed unsafe class SharedMemoryPlanTests
 
         nuint total = plan.CalculateTotalBytes();
 
-        // Superblock = 4096B (Page 0, 4KB page aligned)
-        // Region A   = Offset 4096, Len 100 -> End 4196 -> Aligned to 64: 4224
-        // Region B   = Offset 4224, Len 50  -> End 4274 -> Aligned to 64: 4288
-        Assert.Equal((nuint)4288, total);
+        // Page 0 = max(4096, SystemPageSize) -> 4096 on 4KB x64, 16384 on 16KB Apple Silicon
+        // Region A = Page0 + 100 -> aligned to 64 = Page0 + 128
+        // Region B = Page0 + 128 + 50 -> aligned to 64 = Page0 + 192
+        nuint page0 = Math.Max(
+            (nuint)SharedMemorySuperblock.SuperblockSize,
+            (nuint)Environment.SystemPageSize
+        );
+        Assert.Equal(page0 + 192, total);
         Assert.Equal((nuint)0, total % 64);
+    }
+
+    [Fact]
+    public void AddRegion_SupportsByteUShortAndUIntEnumTags()
+    {
+        var plan = new SharedMemoryPlan()
+            .AddRegion(ByteTag.First, 64)
+            .AddRegion(UShortTag.Alpha, 128)
+            .AddRegion(TestTags.RegionC, 256);
+
+        nuint totalBytes = plan.CalculateTotalBytes();
+        using var map = NativeMemoryMap.CreateAnonymous(totalBytes);
+        var sb = (SharedMemorySuperblock*)map.Pointer;
+        plan.FormatSuperblock(sb, FourCC.Make("TEST"), 1, 1, totalBytes);
+
+        Assert.Equal(3, sb->RegionCount);
+        SharedMemoryRegionEntry* entries = sb->GetRegionEntries();
+        Assert.Equal((uint)ByteTag.First, entries[0].Tag);
+        Assert.Equal((uint)UShortTag.Alpha, entries[1].Tag);
+        Assert.Equal((uint)TestTags.RegionC, entries[2].Tag);
+    }
+
+    [Fact]
+    public void AddRegion_ThrowsOnZeroByteCount()
+    {
+        var plan = new SharedMemoryPlan();
+        Assert.Throws<ArgumentOutOfRangeException>(() => plan.AddRegion(TestTags.RegionA, 0));
     }
 
     [Fact]
@@ -104,7 +147,10 @@ public sealed unsafe class SharedMemoryPlanTests
         Assert.Equal((uint)SharedMemoryState.Initializing, sb->State);
 
         SharedMemoryRegionEntry* entries = sb->GetRegionEntries();
-        nuint cursor = SharedMemorySuperblock.SuperblockSize;
+        nuint cursor = Math.Max(
+            (nuint)SharedMemorySuperblock.SuperblockSize,
+            (nuint)Environment.SystemPageSize
+        );
 
         for (int i = 0; i < 3; i++)
         {

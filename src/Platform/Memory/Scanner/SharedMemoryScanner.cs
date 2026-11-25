@@ -41,6 +41,9 @@ public static unsafe class SharedMemoryScanner
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             return ScanLinux(prefix, destination, expectedMagic, expectedAbiVersion);
 
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            return ScanMacOS(prefix, destination, expectedMagic, expectedAbiVersion);
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return ScanWindows(prefix, destination, expectedMagic, expectedAbiVersion);
 
@@ -170,6 +173,86 @@ public static unsafe class SharedMemoryScanner
             }
             Libc.Close(fd);
         }
+    }
+
+    private static int ScanMacOS(
+        string prefix,
+        Span<DiscoveredSegment> destination,
+        uint expectedMagic,
+        uint expectedAbiVersion
+    )
+    {
+        if (!Directory.Exists(PosixAbi.MacShmDirectory))
+            return 0;
+
+        Span<byte> nameUtf8 = stackalloc byte[64];
+        int count = 0;
+        foreach (string fullPath in Directory.EnumerateFiles(PosixAbi.MacShmDirectory))
+        {
+            if (count >= destination.Length)
+                break;
+
+            string fileName = Path.GetFileName(fullPath);
+            if (!fileName.StartsWith(prefix, StringComparison.Ordinal))
+                continue;
+
+            int fd = Libc.Open(fullPath, PosixOpenFlags.ReadOnly, 0);
+            if (fd < 0)
+                continue;
+
+            void* ptr = null;
+            try
+            {
+                if (!PosixAbi.TryGetFileSize(fd, out long fileSize))
+                    continue;
+
+                nuint minSuperblockSize = SharedMemorySuperblock.SuperblockSize;
+                if (fileSize <= 0 || (nuint)fileSize < minSuperblockSize)
+                    continue;
+
+                ptr = Libc.Mmap(
+                    null,
+                    minSuperblockSize,
+                    MemoryMapProt.Read,
+                    MemoryMapFlags.Shared,
+                    fd,
+                    0
+                );
+
+                if (ptr == Libc.MAP_FAILED || ptr == null)
+                    continue;
+
+                var sb = (SharedMemorySuperblock*)ptr;
+                if (Volatile.Read(ref sb->State) != (uint)SharedMemoryState.Ready)
+                    continue;
+                if (expectedMagic != 0 && sb->Magic != expectedMagic)
+                    continue;
+                if (expectedAbiVersion != 0 && sb->AbiVersion != expectedAbiVersion)
+                    continue;
+
+                DiscoveredSegment seg = default;
+                seg.Superblock = *sb;
+
+                int nameLen = Encoding.UTF8.GetBytes(
+                    fileName.AsSpan(0, Math.Min(fileName.Length, 64)),
+                    nameUtf8
+                );
+                seg.NameLength = nameLen;
+                nameUtf8[..nameLen].CopyTo(new Span<byte>(seg.NameUtf8, 64));
+
+                destination[count++] = seg;
+            }
+            finally
+            {
+                if (ptr != null && ptr != Libc.MAP_FAILED)
+                {
+                    Libc.Munmap(ptr, SharedMemorySuperblock.SuperblockSize);
+                }
+                Libc.Close(fd);
+            }
+        }
+
+        return count;
     }
 
     #endregion
