@@ -395,6 +395,11 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                     continue;
 
                 case NativeMapOpenStatus.AccessDenied:
+                    if (PosixAbi.IsMacOS && Stopwatch.GetTimestamp() < deadline)
+                    {
+                        spinner.SpinOnce();
+                        continue;
+                    }
                     throw new UnauthorizedAccessException(
                         $"Access to shared memory segment '{name}' was denied ({openError}): {PlatformCompat.GetErrorMessage(openError)}"
                     );
