@@ -1,6 +1,6 @@
-using Platform.Internal;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Platform.Internal;
 
 namespace Platform.Memory.Shared;
 
@@ -196,7 +196,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
 
         long start = Stopwatch.GetTimestamp();
         long timeoutTicks =
-            timeout == default
+            timeout == TimeSpan.Zero
                 ? Stopwatch.Frequency * 5
                 : (long)(timeout.TotalSeconds * Stopwatch.Frequency);
 

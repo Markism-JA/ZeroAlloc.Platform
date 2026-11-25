@@ -1,8 +1,8 @@
-using Platform.Internal;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Platform.Internal;
 using Platform.Native.Posix;
 using Platform.Native.Posix.Enums;
 using Platform.Native.Posix.Structs;
@@ -11,6 +11,8 @@ using Platform.Native.Windows.Enums;
 using Platform.Native.Windows.Structs;
 using Kernel32 = Platform.Native.Windows.Kernel32;
 using Libc = Platform.Native.Posix.Libc;
+
+// ReSharper disable NullableWarningSuppressionIsUsed
 
 namespace Platform.Memory;
 
@@ -37,8 +39,6 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
     private const int _posixOpenExistingMode = 0;
     private const int _defaultPosixShmAndFileMode = 0b110_110_000; // 0660: rw-rw----
     private const int _genericSystemErrorCode = -1;
-    private const int _shiftDwordHigh = 32;
-    private const uint _maskDwordLow = 0xFFFF_FFFF;
 
     private void* _pointer;
     private readonly nuint _length;
@@ -123,8 +123,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             PageProtection flProtect = TranslateWin32Protect(protection);
-            uint high = (uint)(byteCount >> _shiftDwordHigh);
-            uint low = (uint)(byteCount & _maskDwordLow);
+            var (high, low) = SplitSize64(byteCount);
 
             nint hMap = Kernel32.CreateFileMappingW(
                 Kernel32.INVALID_HANDLE_VALUE,
@@ -437,11 +436,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Span<byte> AsSpan()
     {
-        PlatformCompat.ThrowIfGreaterThan(
-            _length,
-            (nuint)int.MaxValue,
-            nameof(Length)
-        );
+        PlatformCompat.ThrowIfGreaterThan(_length, int.MaxValue, nameof(Length));
         return new Span<byte>(Pointer, (int)_length);
     }
 
@@ -451,11 +446,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ReadOnlySpan<byte> AsReadOnlySpan()
     {
-        PlatformCompat.ThrowIfGreaterThan(
-            _length,
-            (nuint)int.MaxValue,
-            nameof(Length)
-        );
+        PlatformCompat.ThrowIfGreaterThan(_length, int.MaxValue, nameof(Length));
         return new ReadOnlySpan<byte>(Pointer, (int)_length);
     }
 
@@ -623,8 +614,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
         {
             string winMapName = NormalizeWindowsMappingName(name);
             PageProtection flProtect = TranslateWin32Protect(protection);
-            uint high = (uint)(byteCount >> _shiftDwordHigh);
-            uint low = (uint)(byteCount & _maskDwordLow);
+            var (high, low) = SplitSize64(byteCount);
 
             nint hMap = Kernel32.CreateFileMappingW(
                 Kernel32.INVALID_HANDLE_VALUE,
@@ -892,6 +882,9 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
             access |= FileMapAccess.Read;
         return access;
     }
+
+    private static (uint High, uint Low) SplitSize64(ulong byteCount) =>
+        ((uint)(byteCount >> 32), (uint)byteCount);
 
     #endregion
 

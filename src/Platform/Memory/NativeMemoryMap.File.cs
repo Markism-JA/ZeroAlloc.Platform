@@ -1,5 +1,5 @@
-using Platform.Internal;
 using System.Runtime.InteropServices;
+using Platform.Internal;
 using Platform.Native.Posix;
 using Platform.Native.Posix.Enums;
 using Platform.Native.Posix.Structs;
@@ -7,6 +7,8 @@ using Platform.Native.Windows;
 using Platform.Native.Windows.Enums;
 using Kernel32 = Platform.Native.Windows.Kernel32;
 using Libc = Platform.Native.Posix.Libc;
+
+// ReSharper disable NullableWarningSuppressionIsUsed
 
 namespace Platform.Memory;
 
@@ -303,8 +305,7 @@ public sealed unsafe partial class NativeMemoryMap
                 );
 
                 PageProtection flProtect = TranslateWin32Protect(protection);
-                uint high = (uint)(byteCount >> _shiftDwordHigh);
-                uint low = (uint)(byteCount & _maskDwordLow);
+                var (high, low) = SplitSize64(byteCount);
 
                 hMap = Kernel32.CreateFileMappingW(
                     hFile,
@@ -396,6 +397,7 @@ public sealed unsafe partial class NativeMemoryMap
 
             bool success = false;
             void* ptr = null;
+            nuint mappingLength = 0;
             try
             {
                 if (Libc.Fstat(fd, out Stat stat) != 0)
@@ -411,7 +413,7 @@ public sealed unsafe partial class NativeMemoryMap
                     return NativeMapOpenStatus.InvalidSize;
                 }
 
-                nuint mappingLength = byteCount == 0 ? fileSize : byteCount;
+                mappingLength = byteCount == 0 ? fileSize : byteCount;
                 if (fileSize < mappingLength)
                 {
                     errorCode = PosixErrors.EINVAL;
@@ -445,7 +447,7 @@ public sealed unsafe partial class NativeMemoryMap
                 {
                     if (ptr != null && ptr != Libc.MAP_FAILED)
                     {
-                        Libc.Munmap(ptr, byteCount);
+                        Libc.Munmap(ptr, mappingLength);
                     }
 
                     Libc.Close(fd);
@@ -504,8 +506,7 @@ public sealed unsafe partial class NativeMemoryMap
                 }
 
                 PageProtection flProtect = TranslateWin32Protect(protection);
-                uint high = (uint)(mappingLength >> _shiftDwordHigh);
-                uint low = (uint)(mappingLength & _maskDwordLow);
+                var (high, low) = SplitSize64(mappingLength);
 
                 hMap = Kernel32.CreateFileMappingW(
                     hFile,
