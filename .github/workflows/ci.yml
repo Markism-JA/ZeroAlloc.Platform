@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.editorconfig'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.editorconfig'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-matrix:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest       # linux-x64
+          - ubuntu-24.04-arm    # linux-arm64
+          - windows-latest      # win-x64
+          - macos-latest        # osx-arm64 (16KB pages, managed ThreadParker fallback)
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build netstandard2.1 library
+        run: dotnet build src/Platform/Platform.csproj -c Release -f netstandard2.1 --no-restore
+
+      - name: Run tests (net10.0, Release)
+        run: dotnet test -c Release --no-restore --verbosity normal
+
+      - name: Run tests (net10.0, Debug)
+        if: matrix.os == 'ubuntu-latest'
+        run: dotnet test -c Debug --no-restore --verbosity normal

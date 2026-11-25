@@ -10,8 +10,13 @@ internal static unsafe partial class Libc
     /// <remarks>
     /// See: <see href="https://man7.org/linux/man-pages/man3/pthread_self.3.html"/>
     /// </remarks>
+#if NET7_0_OR_GREATER
     [LibraryImport(LibName, EntryPoint = "pthread_self")]
     public static partial nint PthreadSelf();
+#else
+    [DllImport(LibName, EntryPoint = "pthread_self")]
+    public static extern nint PthreadSelf();
+#endif
 
     /// <summary>
     /// Sets the CPU affinity mask of the target thread.
@@ -24,6 +29,11 @@ internal static unsafe partial class Libc
     /// Notice: <c>pthread_*</c> functions return the error number directly on failure instead of setting <c>errno</c>.
     /// See: <see href="https://man7.org/linux/man-pages/man3/pthread_setaffinity_np.3.html"/>
     /// </remarks>
+#if NET7_0_OR_GREATER
     [LibraryImport(LibName, EntryPoint = "pthread_setaffinity_np")]
     public static partial int PthreadSetAffinityNp(nint thread, nuint cpusetsize, ulong* cpuset);
+#else
+    [DllImport(LibName, EntryPoint = "pthread_setaffinity_np")]
+    public static extern int PthreadSetAffinityNp(nint thread, nuint cpusetsize, ulong* cpuset);
+#endif
 }

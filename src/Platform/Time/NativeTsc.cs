@@ -9,9 +9,15 @@ namespace Platform.Time;
 
 public static unsafe class NativeTsc
 {
+#if NET7_0_OR_GREATER
     private static readonly delegate* unmanaged[SuppressGCTransition]<ulong> ReadTsc;
+#else
+    private static readonly delegate* unmanaged[Cdecl]<ulong> ReadTsc;
+#endif
     private static readonly bool IsSupported;
     private static readonly double TicksToNs = 1_000_000_000.0 / Stopwatch.Frequency;
+    private static readonly long FallbackStopwatchAnchorTicks;
+    private static readonly long FallbackUnixEpochAnchorNs;
 
     // Seqlock-protected anchor block (64 bytes aligned)
     [StructLayout(LayoutKind.Explicit, Size = 64)]
@@ -38,6 +44,9 @@ public static unsafe class NativeTsc
 
     static NativeTsc()
     {
+        FallbackStopwatchAnchorTicks = Stopwatch.GetTimestamp();
+        FallbackUnixEpochAnchorNs = (DateTime.UtcNow.Ticks - DateTime.UnixEpoch.Ticks) * 100L;
+
         if (RuntimeInformation.ProcessArchitecture != Architecture.X64)
         {
             IsSupported = false;
@@ -58,7 +67,11 @@ public static unsafe class NativeTsc
             Buffer.MemoryCopy(src, executablePage, opcodes.Length, opcodes.Length);
         }
 
+#if NET7_0_OR_GREATER
         ReadTsc = (delegate* unmanaged[SuppressGCTransition]<ulong>)executablePage;
+#else
+        ReadTsc = (delegate* unmanaged[Cdecl]<ulong>)executablePage;
+#endif
 
         // Initial calibration
         CalibrateAnchor();
@@ -105,7 +118,8 @@ public static unsafe class NativeTsc
             }
         }
 
-        return (long)(Stopwatch.GetTimestamp() * TicksToNs);
+        long elapsedTicks = Stopwatch.GetTimestamp() - FallbackStopwatchAnchorTicks;
+        return FallbackUnixEpochAnchorNs + (long)(elapsedTicks * TicksToNs);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -1,3 +1,4 @@
+using Platform.Internal;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -93,7 +94,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
         MemoryMapOptions options = MemoryMapOptions.PreFault
     )
     {
-        ArgumentOutOfRangeException.ThrowIfZero(byteCount);
+        PlatformCompat.ThrowIfZero(byteCount);
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
@@ -108,9 +109,9 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
             void* ptr = Libc.Mmap(null, byteCount, prot, flags, _anonymousFd, 0);
             if (ptr == Libc.MAP_FAILED)
             {
-                int error = Marshal.GetLastPInvokeError();
+                int error = PlatformCompat.GetLastError();
                 throw new IOException(
-                    $"Linux mmap anonymous failed ({error}): {Marshal.GetPInvokeErrorMessage(error)}"
+                    $"Linux mmap anonymous failed ({error}): {PlatformCompat.GetErrorMessage(error)}"
                 );
             }
 
@@ -136,10 +137,10 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
 
             if (hMap == 0)
             {
-                int error = Marshal.GetLastPInvokeError();
+                int error = PlatformCompat.GetLastError();
                 throw new Win32Exception(
                     error,
-                    $"Windows CreateFileMapping failed ({error}): {Marshal.GetPInvokeErrorMessage(error)}"
+                    $"Windows CreateFileMapping failed ({error}): {PlatformCompat.GetErrorMessage(error)}"
                 );
             }
 
@@ -151,10 +152,10 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                 ptr = Kernel32.MapViewOfFile(hMap, desiredAccess, 0, 0, byteCount);
                 if (ptr == null)
                 {
-                    int error = Marshal.GetLastPInvokeError();
+                    int error = PlatformCompat.GetLastError();
                     throw new Win32Exception(
                         error,
-                        $"Windows MapViewOfFile failed ({error}): {Marshal.GetPInvokeErrorMessage(error)}"
+                        $"Windows MapViewOfFile failed ({error}): {PlatformCompat.GetErrorMessage(error)}"
                     );
                 }
 
@@ -194,8 +195,8 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
         MemoryMapOptions options = MemoryMapOptions.PreFault
     )
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentOutOfRangeException.ThrowIfZero(byteCount);
+        PlatformCompat.ThrowIfNullOrWhiteSpace(name);
+        PlatformCompat.ThrowIfZero(byteCount);
 
         NativeMapCreateStatus status = TryCreateNewSharedCore(
             name,
@@ -213,7 +214,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                 $"Shared memory segment '{name}' already exists."
             ),
             _ => throw new IOException(
-                $"Failed to create shared memory segment '{name}' ({errorCode}): {Marshal.GetPInvokeErrorMessage(errorCode)}"
+                $"Failed to create shared memory segment '{name}' ({errorCode}): {PlatformCompat.GetErrorMessage(errorCode)}"
             ),
         };
     }
@@ -229,8 +230,8 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
         MemoryMapOptions options = MemoryMapOptions.None
     )
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentOutOfRangeException.ThrowIfZero(byteCount);
+        PlatformCompat.ThrowIfNullOrWhiteSpace(name);
+        PlatformCompat.ThrowIfZero(byteCount);
 
         NativeMapOpenStatus status = TryOpenExistingSharedCore(
             name,
@@ -254,10 +255,10 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                 $"Shared memory segment '{name}' is smaller than requested."
             ),
             NativeMapOpenStatus.AccessDenied => throw new UnauthorizedAccessException(
-                $"Access to shared memory segment '{name}' was denied ({errorCode}): {Marshal.GetPInvokeErrorMessage(errorCode)}"
+                $"Access to shared memory segment '{name}' was denied ({errorCode}): {PlatformCompat.GetErrorMessage(errorCode)}"
             ),
             _ => throw new IOException(
-                $"Failed to open shared memory segment '{name}' ({errorCode}): {Marshal.GetPInvokeErrorMessage(errorCode)}"
+                $"Failed to open shared memory segment '{name}' ({errorCode}): {PlatformCompat.GetErrorMessage(errorCode)}"
             ),
         };
     }
@@ -298,10 +299,10 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                 $"Shared memory segment '{name}' is smaller than requested."
             ),
             NativeMapOpenStatus.AccessDenied => throw new UnauthorizedAccessException(
-                $"Access to shared memory segment '{name}' was denied ({errorCode}): {Marshal.GetPInvokeErrorMessage(errorCode)}"
+                $"Access to shared memory segment '{name}' was denied ({errorCode}): {PlatformCompat.GetErrorMessage(errorCode)}"
             ),
             _ => throw new IOException(
-                $"Failed to probe shared memory segment '{name}' ({errorCode}): {Marshal.GetPInvokeErrorMessage(errorCode)}"
+                $"Failed to probe shared memory segment '{name}' ({errorCode}): {PlatformCompat.GetErrorMessage(errorCode)}"
             ),
         };
     }
@@ -318,8 +319,8 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
         TimeSpan timeout = default
     )
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentOutOfRangeException.ThrowIfZero(byteCount);
+        PlatformCompat.ThrowIfNullOrWhiteSpace(name);
+        PlatformCompat.ThrowIfZero(byteCount);
 
         NativeMapCreateStatus createStatus = TryCreateNewSharedCore(
             name,
@@ -336,7 +337,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
         if (createStatus != NativeMapCreateStatus.AlreadyExists)
         {
             throw new IOException(
-                $"Failed to create shared memory segment '{name}' ({createError}): {Marshal.GetPInvokeErrorMessage(createError)}"
+                $"Failed to create shared memory segment '{name}' ({createError}): {PlatformCompat.GetErrorMessage(createError)}"
             );
         }
 
@@ -391,14 +392,14 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                     if (createStatus != NativeMapCreateStatus.AlreadyExists)
                     {
                         throw new IOException(
-                            $"Failed to recreate shared memory segment '{name}' ({createError}): {Marshal.GetPInvokeErrorMessage(createError)}"
+                            $"Failed to recreate shared memory segment '{name}' ({createError}): {PlatformCompat.GetErrorMessage(createError)}"
                         );
                     }
                     continue;
 
                 case NativeMapOpenStatus.AccessDenied:
                     throw new UnauthorizedAccessException(
-                        $"Access to shared memory segment '{name}' was denied ({openError}): {Marshal.GetPInvokeErrorMessage(openError)}"
+                        $"Access to shared memory segment '{name}' was denied ({openError}): {PlatformCompat.GetErrorMessage(openError)}"
                     );
 
                 case NativeMapOpenStatus.InvalidSize:
@@ -409,7 +410,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                 case NativeMapOpenStatus.SystemError:
                 default:
                     throw new IOException(
-                        $"Failed to open shared memory segment '{name}' ({openError}): {Marshal.GetPInvokeErrorMessage(openError)}"
+                        $"Failed to open shared memory segment '{name}' ({openError}): {PlatformCompat.GetErrorMessage(openError)}"
                     );
             }
         }
@@ -436,7 +437,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Span<byte> AsSpan()
     {
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(
+        PlatformCompat.ThrowIfGreaterThan(
             _length,
             (nuint)int.MaxValue,
             nameof(Length)
@@ -450,7 +451,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ReadOnlySpan<byte> AsReadOnlySpan()
     {
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(
+        PlatformCompat.ThrowIfGreaterThan(
             _length,
             (nuint)int.MaxValue,
             nameof(Length)
@@ -466,8 +467,8 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
     public Span<T> AsSpan<T>(int offsetBytes, int count)
         where T : unmanaged
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offsetBytes);
-        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        PlatformCompat.ThrowIfNegative(offsetBytes);
+        PlatformCompat.ThrowIfNegative(count);
 
         nuint requiredBytes = (nuint)count * (nuint)sizeof(T);
         nuint totalEnd = (nuint)offsetBytes + requiredBytes;
@@ -496,9 +497,9 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
         {
             if (Libc.Msync(_pointer, _length, MsyncFlags.Sync) != 0)
             {
-                int error = Marshal.GetLastPInvokeError();
+                int error = PlatformCompat.GetLastError();
                 throw new IOException(
-                    $"Linux msync failed ({error}): {Marshal.GetPInvokeErrorMessage(error)}"
+                    $"Linux msync failed ({error}): {PlatformCompat.GetErrorMessage(error)}"
                 );
             }
 
@@ -506,9 +507,9 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
             {
                 if (Libc.Fdatasync(_fileDescriptor) != 0)
                 {
-                    int error = Marshal.GetLastPInvokeError();
+                    int error = PlatformCompat.GetLastError();
                     throw new IOException(
-                        $"Linux fdatasync failed ({error}): {Marshal.GetPInvokeErrorMessage(error)}"
+                        $"Linux fdatasync failed ({error}): {PlatformCompat.GetErrorMessage(error)}"
                     );
                 }
             }
@@ -517,10 +518,10 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
         {
             if (!Kernel32.FlushViewOfFile(_pointer, _length))
             {
-                int error = Marshal.GetLastPInvokeError();
+                int error = PlatformCompat.GetLastError();
                 throw new Win32Exception(
                     error,
-                    $"Windows FlushViewOfFile failed ({error}): {Marshal.GetPInvokeErrorMessage(error)}"
+                    $"Windows FlushViewOfFile failed ({error}): {PlatformCompat.GetErrorMessage(error)}"
                 );
             }
 
@@ -532,10 +533,10 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
             {
                 if (!Kernel32.FlushFileBuffers(_windowsFileHandle))
                 {
-                    int error = Marshal.GetLastPInvokeError();
+                    int error = PlatformCompat.GetLastError();
                     throw new Win32Exception(
                         error,
-                        $"Windows FlushFileBuffers failed ({error}): {Marshal.GetPInvokeErrorMessage(error)}"
+                        $"Windows FlushFileBuffers failed ({error}): {PlatformCompat.GetErrorMessage(error)}"
                     );
                 }
             }
@@ -567,7 +568,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
             int fd = Libc.Shm_open(shmPath, oflags, _defaultPosixShmAndFileMode);
             if (fd < 0)
             {
-                errorCode = Marshal.GetLastPInvokeError();
+                errorCode = PlatformCompat.GetLastError();
                 return errorCode == PosixErrors.EEXIST
                     ? NativeMapCreateStatus.AlreadyExists
                     : NativeMapCreateStatus.SystemError;
@@ -579,7 +580,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
             {
                 if (Libc.Ftruncate(fd, (nint)byteCount) != 0)
                 {
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapCreateStatus.SystemError;
                 }
 
@@ -595,7 +596,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                 if (ptr == Libc.MAP_FAILED)
                 {
                     ptr = null;
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapCreateStatus.SystemError;
                 }
 
@@ -634,7 +635,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                 winMapName
             );
 
-            errorCode = Marshal.GetLastPInvokeError();
+            errorCode = PlatformCompat.GetLastError();
             if (hMap == 0)
             {
                 return NativeMapCreateStatus.SystemError;
@@ -654,7 +655,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                 ptr = Kernel32.MapViewOfFile(hMap, desiredAccess, 0, 0, byteCount);
                 if (ptr == null)
                 {
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapCreateStatus.SystemError;
                 }
 
@@ -703,7 +704,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
             int fd = Libc.Shm_open(shmPath, oflags, _posixOpenExistingMode);
             if (fd < 0)
             {
-                errorCode = Marshal.GetLastPInvokeError();
+                errorCode = PlatformCompat.GetLastError();
 
                 if (errorCode == PosixErrors.ENOENT)
                     return NativeMapOpenStatus.NotFound;
@@ -717,7 +718,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
             {
                 if (Libc.Fstat(fd, out Stat stat) != 0)
                 {
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapOpenStatus.SystemError;
                 }
 
@@ -743,7 +744,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                 void* ptr = Libc.Mmap(null, byteCount, prot, mapFlags, fd, 0);
                 if (ptr == Libc.MAP_FAILED)
                 {
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapOpenStatus.SystemError;
                 }
 
@@ -765,7 +766,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
             nint hMap = Kernel32.OpenFileMappingW(desiredAccess, false, winMapName);
             if (hMap == 0)
             {
-                errorCode = Marshal.GetLastPInvokeError();
+                errorCode = PlatformCompat.GetLastError();
 
                 if (errorCode == (int)Win32Errors.ERROR_FILE_NOT_FOUND)
                     return NativeMapOpenStatus.NotFound;
@@ -781,7 +782,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                 ptr = Kernel32.MapViewOfFile(hMap, desiredAccess, 0, 0, byteCount);
                 if (ptr == null)
                 {
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
 
                     if (
                         errorCode == (int)Win32Errors.ERROR_NOT_ENOUGH_MEMORY

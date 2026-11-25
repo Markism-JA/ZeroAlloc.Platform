@@ -1,3 +1,4 @@
+using Platform.Internal;
 using System.Runtime.InteropServices;
 using Platform.Native.Posix;
 using Platform.Native.Posix.Enums;
@@ -24,8 +25,8 @@ public sealed unsafe partial class NativeMemoryMap
         MemoryMapOptions options = MemoryMapOptions.None
     )
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
-        ArgumentOutOfRangeException.ThrowIfZero(byteCount);
+        PlatformCompat.ThrowIfNullOrWhiteSpace(filePath);
+        PlatformCompat.ThrowIfZero(byteCount);
 
         NativeMapCreateStatus status = TryCreateNewFileCore(
             filePath,
@@ -43,7 +44,7 @@ public sealed unsafe partial class NativeMemoryMap
                 $"File '{filePath}' already exists."
             ),
             _ => throw new IOException(
-                $"Failed to create persistent file mapping '{filePath}' ({errorCode}): {Marshal.GetPInvokeErrorMessage(errorCode)}"
+                $"Failed to create persistent file mapping '{filePath}' ({errorCode}): {PlatformCompat.GetErrorMessage(errorCode)}"
             ),
         };
     }
@@ -59,7 +60,7 @@ public sealed unsafe partial class NativeMemoryMap
         MemoryMapOptions options = MemoryMapOptions.None
     )
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        PlatformCompat.ThrowIfNullOrWhiteSpace(filePath);
 
         NativeMapOpenStatus status = TryOpenExistingFileCore(
             filePath,
@@ -80,10 +81,10 @@ public sealed unsafe partial class NativeMemoryMap
                 $"File '{filePath}' size is smaller than requested mapping size."
             ),
             NativeMapOpenStatus.AccessDenied => throw new UnauthorizedAccessException(
-                $"Access to file '{filePath}' was denied ({errorCode}): {Marshal.GetPInvokeErrorMessage(errorCode)}"
+                $"Access to file '{filePath}' was denied ({errorCode}): {PlatformCompat.GetErrorMessage(errorCode)}"
             ),
             _ => throw new IOException(
-                $"Failed to open persistent file mapping '{filePath}' ({errorCode}): {Marshal.GetPInvokeErrorMessage(errorCode)}"
+                $"Failed to open persistent file mapping '{filePath}' ({errorCode}): {PlatformCompat.GetErrorMessage(errorCode)}"
             ),
         };
     }
@@ -121,10 +122,10 @@ public sealed unsafe partial class NativeMemoryMap
                 $"File '{filePath}' size is smaller than requested mapping size."
             ),
             NativeMapOpenStatus.AccessDenied => throw new UnauthorizedAccessException(
-                $"Access to file '{filePath}' was denied ({errorCode}): {Marshal.GetPInvokeErrorMessage(errorCode)}"
+                $"Access to file '{filePath}' was denied ({errorCode}): {PlatformCompat.GetErrorMessage(errorCode)}"
             ),
             _ => throw new IOException(
-                $"Failed to probe persistent file mapping '{filePath}' ({errorCode}): {Marshal.GetPInvokeErrorMessage(errorCode)}"
+                $"Failed to probe persistent file mapping '{filePath}' ({errorCode}): {PlatformCompat.GetErrorMessage(errorCode)}"
             ),
         };
     }
@@ -139,8 +140,8 @@ public sealed unsafe partial class NativeMemoryMap
         MemoryMapOptions options = MemoryMapOptions.None
     )
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
-        ArgumentOutOfRangeException.ThrowIfZero(byteCount);
+        PlatformCompat.ThrowIfNullOrWhiteSpace(filePath);
+        PlatformCompat.ThrowIfZero(byteCount);
 
         NativeMapCreateStatus createStatus = TryCreateNewFileCore(
             filePath,
@@ -157,7 +158,7 @@ public sealed unsafe partial class NativeMemoryMap
         if (createStatus != NativeMapCreateStatus.AlreadyExists)
         {
             throw new IOException(
-                $"Failed to create persistent file '{filePath}' ({createError}): {Marshal.GetPInvokeErrorMessage(createError)}"
+                $"Failed to create persistent file '{filePath}' ({createError}): {PlatformCompat.GetErrorMessage(createError)}"
             );
         }
 
@@ -188,7 +189,7 @@ public sealed unsafe partial class NativeMemoryMap
             int fd = Libc.Open(fullPath, oflags, _defaultPosixShmAndFileMode);
             if (fd < 0)
             {
-                errorCode = Marshal.GetLastPInvokeError();
+                errorCode = PlatformCompat.GetLastError();
                 return errorCode == PosixErrors.EEXIST
                     ? NativeMapCreateStatus.AlreadyExists
                     : NativeMapCreateStatus.SystemError;
@@ -218,7 +219,7 @@ public sealed unsafe partial class NativeMemoryMap
                 if (ptr == Libc.MAP_FAILED)
                 {
                     ptr = null;
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapCreateStatus.SystemError;
                 }
 
@@ -266,7 +267,7 @@ public sealed unsafe partial class NativeMemoryMap
 
             if (hFile == Kernel32.INVALID_HANDLE_VALUE || hFile == 0)
             {
-                errorCode = Marshal.GetLastPInvokeError();
+                errorCode = PlatformCompat.GetLastError();
                 return
                     (uint)errorCode == Win32Errors.ERROR_FILE_EXISTS
                     || (uint)errorCode == Win32Errors.ERROR_ALREADY_EXISTS
@@ -289,7 +290,7 @@ public sealed unsafe partial class NativeMemoryMap
                     ) || !Kernel32.SetEndOfFile(hFile)
                 )
                 {
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapCreateStatus.SystemError;
                 }
 
@@ -316,7 +317,7 @@ public sealed unsafe partial class NativeMemoryMap
 
                 if (hMap == 0)
                 {
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapCreateStatus.SystemError;
                 }
 
@@ -324,7 +325,7 @@ public sealed unsafe partial class NativeMemoryMap
                 ptr = Kernel32.MapViewOfFile(hMap, viewAccess, 0, 0, byteCount);
                 if (ptr == null)
                 {
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapCreateStatus.SystemError;
                 }
 
@@ -384,7 +385,7 @@ public sealed unsafe partial class NativeMemoryMap
             int fd = Libc.Open(fullPath, oflags, _posixOpenExistingMode);
             if (fd < 0)
             {
-                errorCode = Marshal.GetLastPInvokeError();
+                errorCode = PlatformCompat.GetLastError();
                 if (errorCode == PosixErrors.ENOENT)
                     return NativeMapOpenStatus.NotFound;
                 if (errorCode is PosixErrors.EACCES or PosixErrors.EPERM)
@@ -399,7 +400,7 @@ public sealed unsafe partial class NativeMemoryMap
             {
                 if (Libc.Fstat(fd, out Stat stat) != 0)
                 {
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapOpenStatus.SystemError;
                 }
 
@@ -429,7 +430,7 @@ public sealed unsafe partial class NativeMemoryMap
                 if (ptr == Libc.MAP_FAILED)
                 {
                     ptr = null;
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapOpenStatus.SystemError;
                 }
 
@@ -474,7 +475,7 @@ public sealed unsafe partial class NativeMemoryMap
 
             if (hFile == Kernel32.INVALID_HANDLE_VALUE || hFile == 0)
             {
-                errorCode = Marshal.GetLastPInvokeError();
+                errorCode = PlatformCompat.GetLastError();
                 if ((uint)errorCode == Win32Errors.ERROR_FILE_NOT_FOUND)
                     return NativeMapOpenStatus.NotFound;
                 if ((uint)errorCode == Win32Errors.ERROR_ACCESS_DENIED)
@@ -490,7 +491,7 @@ public sealed unsafe partial class NativeMemoryMap
             {
                 if (!Kernel32.GetFileSizeEx(hFile, out long fileSizeRaw) || fileSizeRaw <= 0)
                 {
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapOpenStatus.InvalidSize;
                 }
 
@@ -517,7 +518,7 @@ public sealed unsafe partial class NativeMemoryMap
 
                 if (hMap == 0)
                 {
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapOpenStatus.SystemError;
                 }
 
@@ -525,7 +526,7 @@ public sealed unsafe partial class NativeMemoryMap
                 ptr = Kernel32.MapViewOfFile(hMap, viewAccess, 0, 0, mappingLength);
                 if (ptr == null)
                 {
-                    errorCode = Marshal.GetLastPInvokeError();
+                    errorCode = PlatformCompat.GetLastError();
                     return NativeMapOpenStatus.SystemError;
                 }
 

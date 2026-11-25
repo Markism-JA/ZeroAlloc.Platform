@@ -16,6 +16,7 @@ internal static unsafe partial class Kernel32
     /// <remarks>
     /// See: <see href="https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-writefile"/>
     /// </remarks>
+#if NET7_0_OR_GREATER
     [LibraryImport(LibName, EntryPoint = "WriteFile", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool WriteFile(
@@ -25,4 +26,15 @@ internal static unsafe partial class Kernel32
         uint* lpNumberOfBytesWritten,
         void* lpOverlapped
     );
+#else
+    [DllImport(LibName, EntryPoint = "WriteFile", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool WriteFile(
+        nint hFile,
+        byte* lpBuffer,
+        uint nNumberOfBytesToWrite,
+        uint* lpNumberOfBytesWritten,
+        void* lpOverlapped
+    );
+#endif
 }

@@ -5,6 +5,12 @@ namespace Platform.Time;
 public static unsafe class PlatformClock
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static long NowNs() => NativeTsc.NowNs();
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static long NowMs() => NativeTsc.NowMs();
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long NowNs(PlatformClockBlock* clock)
     {
         // If clock is null, or points to an offset < 4KB (e.g. &((DiagnosticGate*)null)->Clock)

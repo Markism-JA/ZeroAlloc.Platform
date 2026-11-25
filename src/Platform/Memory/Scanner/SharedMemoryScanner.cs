@@ -1,3 +1,4 @@
+using Platform.Internal;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -32,7 +33,7 @@ public static unsafe class SharedMemoryScanner
         uint expectedAbiVersion = 0
     )
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(prefix);
+        PlatformCompat.ThrowIfNullOrWhiteSpace(prefix);
 
         if (destination.IsEmpty)
             return 0;
@@ -70,7 +71,7 @@ public static unsafe class SharedMemoryScanner
             PosixDirent* entry;
             while ((entry = Libc.ReadDir(dirp)) != null && count < destination.Length)
             {
-                ReadOnlySpan<byte> dName = MemoryMarshal.CreateReadOnlySpanFromNullTerminated(
+                ReadOnlySpan<byte> dName = PlatformCompat.CreateReadOnlySpanFromNullTerminated(
                     entry->d_name
                 );
                 if (!dName.StartsWith(prefixUtf8))

@@ -1,5 +1,5 @@
-using System.Numerics;
 using System.Runtime.CompilerServices;
+using Platform.Internal;
 
 namespace Platform.Memory.Shared;
 
@@ -14,6 +14,11 @@ public sealed class SharedMemoryPlan
 
     private readonly List<PlannedRegion> _regions = new(SharedMemorySuperblock.MaxRegions);
 
+    private static nuint PageBoundary =>
+        PlatformCompat.SystemPageSize > SharedMemorySuperblock.SuperblockSize
+            ? PlatformCompat.SystemPageSize
+            : SharedMemorySuperblock.SuperblockSize;
+
     public SharedMemoryPlan AddRegion(uint tag, nuint byteCount, nuint alignment = 64)
     {
         if (_regions.Count >= SharedMemorySuperblock.MaxRegions)
@@ -21,8 +26,8 @@ public sealed class SharedMemoryPlan
                 $"Cannot exceed {SharedMemorySuperblock.MaxRegions} partitions in Page 0 descriptor table."
             );
 
-        ArgumentOutOfRangeException.ThrowIfZero(byteCount);
-        if (alignment < 8 || !BitOperations.IsPow2((uint)alignment))
+        PlatformCompat.ThrowIfZero(byteCount, nameof(byteCount));
+        if (alignment < 8 || !PlatformCompat.IsPow2((uint)alignment))
             throw new ArgumentException(
                 "Alignment must be a power of two >= 8.",
                 nameof(alignment)
@@ -47,9 +52,9 @@ public sealed class SharedMemoryPlan
     {
         uint rawTag = Unsafe.SizeOf<TEnum>() switch
         {
-            4 => Unsafe.BitCast<TEnum, uint>(tag),
-            2 => Unsafe.BitCast<TEnum, ushort>(tag),
-            1 => Unsafe.BitCast<TEnum, byte>(tag),
+            4 => PlatformCompat.BitCast<TEnum, uint>(tag),
+            2 => PlatformCompat.BitCast<TEnum, ushort>(tag),
+            1 => PlatformCompat.BitCast<TEnum, byte>(tag),
             _ => (uint)Convert.ToInt64(tag),
         };
 
@@ -58,8 +63,8 @@ public sealed class SharedMemoryPlan
 
     public nuint CalculateTotalBytes()
     {
-        // The first user partition begins at Page 1 (offset 4096), isolating Page 0
-        nuint cursor = AlignUp(SharedMemorySuperblock.SuperblockSize, 4096);
+        // The first user partition begins at Page 1, isolating Page 0
+        nuint cursor = AlignUp(SharedMemorySuperblock.SuperblockSize, PageBoundary);
         for (int i = 0; i < _regions.Count; i++)
         {
             cursor = AlignUp(cursor, _regions[i].Alignment);
@@ -95,7 +100,7 @@ public sealed class SharedMemoryPlan
         Volatile.Write(ref sb->State, (uint)SharedMemoryState.Initializing);
 
         SharedMemoryRegionEntry* entries = sb->GetRegionEntries();
-        nuint cursor = AlignUp(SharedMemorySuperblock.SuperblockSize, 4096);
+        nuint cursor = AlignUp(SharedMemorySuperblock.SuperblockSize, PageBoundary);
 
         for (int i = 0; i < _regions.Count; i++)
         {

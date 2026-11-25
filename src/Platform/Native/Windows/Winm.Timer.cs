@@ -15,8 +15,13 @@ internal static partial class Winmm
     /// <remarks>
     /// See: <see href="https://learn.microsoft.com/en-us/windows/win32/api/timeapi/nf-timeapi-timebeginperiod"/>
     /// </remarks>
+#if NET7_0_OR_GREATER
     [LibraryImport(LibName, EntryPoint = "timeBeginPeriod")]
     public static partial MmResult TimeBeginPeriod(uint uMilliseconds);
+#else
+    [DllImport(LibName, EntryPoint = "timeBeginPeriod")]
+    public static extern MmResult TimeBeginPeriod(uint uMilliseconds);
+#endif
 
     /// <summary>
     /// Clears a previously set minimum timer resolution.
@@ -26,6 +31,11 @@ internal static partial class Winmm
     /// <remarks>
     /// See: <see href="https://learn.microsoft.com/en-us/windows/win32/api/timeapi/nf-timeapi-timeendperiod"/>
     /// </remarks>
+#if NET7_0_OR_GREATER
     [LibraryImport(LibName, EntryPoint = "timeEndPeriod")]
     public static partial MmResult TimeEndPeriod(uint uMilliseconds);
+#else
+    [DllImport(LibName, EntryPoint = "timeEndPeriod")]
+    public static extern MmResult TimeEndPeriod(uint uMilliseconds);
+#endif
 }

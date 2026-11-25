@@ -1,3 +1,4 @@
+using Platform.Internal;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -13,7 +14,7 @@ public static unsafe class NativeMemoryMapExtensions
     public static ref T AsRef<T>(this NativeMemoryMap map, int offsetBytes = 0)
         where T : unmanaged
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offsetBytes);
+        PlatformCompat.ThrowIfNegative(offsetBytes);
 
         nuint requiredBytes = (nuint)offsetBytes + (nuint)sizeof(T);
         if (requiredBytes > map.Length)
@@ -34,7 +35,7 @@ public static unsafe class NativeMemoryMapExtensions
     public static void Write<T>(this NativeMemoryMap map, int offsetBytes, in T value)
         where T : unmanaged
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offsetBytes);
+        PlatformCompat.ThrowIfNegative(offsetBytes);
 
         nuint requiredBytes = (nuint)offsetBytes + (nuint)sizeof(T);
         if (requiredBytes > map.Length)
@@ -52,7 +53,7 @@ public static unsafe class NativeMemoryMapExtensions
     public static T Read<T>(this NativeMemoryMap map, int offsetBytes)
         where T : unmanaged
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offsetBytes);
+        PlatformCompat.ThrowIfNegative(offsetBytes);
 
         nuint requiredBytes = (nuint)offsetBytes + (nuint)sizeof(T);
         if (requiredBytes > map.Length)
@@ -73,7 +74,7 @@ public static unsafe class NativeMemoryMapExtensions
         ReadOnlySpan<byte> source
     )
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offsetBytes);
+        PlatformCompat.ThrowIfNegative(offsetBytes);
 
         nuint requiredBytes = (nuint)offsetBytes + (nuint)source.Length;
         if (requiredBytes > map.Length)
@@ -93,7 +94,7 @@ public static unsafe class NativeMemoryMapExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Clear(this NativeMemoryMap map, int offsetBytes = 0, int count = -1)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offsetBytes);
+        PlatformCompat.ThrowIfNegative(offsetBytes);
 
         nuint targetLength = count < 0 ? map.Length - (nuint)offsetBytes : (nuint)count;
         if ((nuint)offsetBytes + targetLength > map.Length)

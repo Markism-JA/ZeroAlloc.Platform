@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Platform.Internal;
 using Platform.Native.Posix;
 using Platform.Native.Posix.Structs;
 using Platform.Native.Windows;
@@ -38,7 +39,7 @@ public sealed unsafe class CrossProcessThreadParker : IDisposable
     /// </summary>
     public static CrossProcessThreadParker OpenOrCreate(string name, bool isOwner = false)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        PlatformCompat.ThrowIfNullOrWhiteSpace(name, nameof(name));
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
@@ -56,7 +57,7 @@ public sealed unsafe class CrossProcessThreadParker : IDisposable
             );
             if (hEvent == 0)
             {
-                int error = Marshal.GetLastPInvokeError();
+                int error = PlatformCompat.GetLastError();
                 throw new Win32Exception(error, $"Failed to create/open Win32 event '{winName}'.");
             }
 
@@ -70,7 +71,7 @@ public sealed unsafe class CrossProcessThreadParker : IDisposable
 
             if (sem == Libc.SEM_FAILED || sem == null)
             {
-                int error = Marshal.GetLastPInvokeError();
+                int error = PlatformCompat.GetLastError();
                 throw new IOException(
                     $"Failed to create/open POSIX semaphore '{posixName}' ({error})."
                 );
@@ -123,7 +124,7 @@ public sealed unsafe class CrossProcessThreadParker : IDisposable
 #if DEBUG
             if (result == Kernel32.WaitFailed)
             {
-                int error = Marshal.GetLastPInvokeError();
+                int error = PlatformCompat.GetLastError();
                 throw new Win32Exception(
                     error,
                     $"WaitForSingleObject failed on handle 0x{(nint)_handle:X}."

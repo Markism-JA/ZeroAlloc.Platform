@@ -17,6 +17,11 @@ internal static unsafe partial class Libc
     /// <remarks>
     /// See: <see href="https://man7.org/linux/man-pages/man2/write.2.html"/>
     /// </remarks>
+#if NET7_0_OR_GREATER
     [LibraryImport(LibName, EntryPoint = "write", SetLastError = true)]
     public static partial nint Write(int fd, byte* buf, nuint count);
+#else
+    [DllImport(LibName, EntryPoint = "write", SetLastError = true)]
+    public static extern nint Write(int fd, byte* buf, nuint count);
+#endif
 }

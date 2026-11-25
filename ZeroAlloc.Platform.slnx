@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Platform/Platform.csproj" />
-    <Project Path="src/Platform.Client/Platform.Client.csproj" />
     <Project Path="src/Platform.Benchmarking.Harness/Platform.Benchmarking.Harness.csproj" />
   </Folder>
   <Folder Name="/tests/">

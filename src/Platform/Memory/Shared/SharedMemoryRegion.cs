@@ -1,3 +1,4 @@
+using Platform.Internal;
 using System.Runtime.CompilerServices;
 
 namespace Platform.Memory.Shared;
@@ -50,8 +51,8 @@ public readonly unsafe struct SharedMemoryRegion
     public Span<T> AsSpan<T>(int offsetBytes, int count)
         where T : unmanaged
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offsetBytes);
-        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        PlatformCompat.ThrowIfNegative(offsetBytes);
+        PlatformCompat.ThrowIfNegative(count);
 
         nuint required = (nuint)offsetBytes + (nuint)count * (nuint)sizeof(T);
         if (required > _length)
@@ -64,7 +65,7 @@ public readonly unsafe struct SharedMemoryRegion
     public ref T AsRef<T>(int offsetBytes = 0)
         where T : unmanaged
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offsetBytes);
+        PlatformCompat.ThrowIfNegative(offsetBytes);
         nuint required = (nuint)offsetBytes + (nuint)sizeof(T);
         if (required > _length)
             ThrowOutOfBounds(offsetBytes, sizeof(T), _length);
@@ -76,7 +77,7 @@ public readonly unsafe struct SharedMemoryRegion
     public void Write<T>(int offsetBytes, in T value)
         where T : unmanaged
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offsetBytes);
+        PlatformCompat.ThrowIfNegative(offsetBytes);
         nuint required = (nuint)offsetBytes + (nuint)sizeof(T);
         if (required > _length)
             ThrowOutOfBounds(offsetBytes, sizeof(T), _length);
@@ -88,7 +89,7 @@ public readonly unsafe struct SharedMemoryRegion
     public T Read<T>(int offsetBytes)
         where T : unmanaged
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(offsetBytes);
+        PlatformCompat.ThrowIfNegative(offsetBytes);
         nuint required = (nuint)offsetBytes + (nuint)sizeof(T);
         if (required > _length)
             ThrowOutOfBounds(offsetBytes, sizeof(T), _length);

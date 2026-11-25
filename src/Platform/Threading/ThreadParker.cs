@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Memory.Allocators;
+using Platform.Internal;
 using Platform.Native.Posix;
 using Platform.Native.Posix.Structs;
 using Platform.Native.Windows;
@@ -14,29 +16,45 @@ public sealed unsafe class ThreadParker : IDisposable
     public const int StateSignaled = 2;
 
     private const int EINTR = 4;
-    private const int ETIMEDOUT = 110;
 
-    // Layout in unified block:
+    // Layout in unified 64-byte cache-line-aligned block:
     // [0..31]  : OS primitive (sem_t 32 bytes on Linux, nint 8 bytes on Windows)
     // [32..35] : int isSleepingState
-    private const nuint BlockAlignment = 16;
-    private const nuint UnifiedBlockSize = 64; // Plenty of room for 32-byte sem_t + 4-byte state + padding
+    private const int BlockAlignment = 64;
+    private const int UnifiedBlockSize = 64;
 
     private readonly void* _block;
     private readonly void* _handle;
     private readonly int* _isSleepingState;
 
+    // Managed fallback for macOS / iOS / Android / WebGL where unnamed POSIX sem_init is unsupported
+    private readonly AutoResetEvent? _managedEvent;
+    private GCHandle _managedGcHandle;
+
     private int _isDisposed;
     private int _activeWaiters;
 
-    public NativeThreadParkerHandle NativeHandle => new(_handle, _isSleepingState);
+    public NativeThreadParkerHandle NativeHandle =>
+        _managedEvent != null
+            ? new NativeThreadParkerHandle(
+                (void*)GCHandle.ToIntPtr(_managedGcHandle),
+                _isSleepingState,
+                &OnManagedUnparkTrampoline
+            )
+            : new NativeThreadParkerHandle(_handle, _isSleepingState);
+
     public int* SleepingStatePointer => _isSleepingState;
+
+    public bool IsSleeping
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => Volatile.Read(ref *_isSleepingState) == StateParked;
+    }
 
     public ThreadParker()
     {
-        // 16-byte aligned 64-byte block guarantees valid alignment for sem_t and int
-        _block = NativeMemory.AlignedAlloc(UnifiedBlockSize, BlockAlignment);
-        NativeMemory.Clear(_block, UnifiedBlockSize);
+        _block = HeapAllocator.Allocate(UnifiedBlockSize, BlockAlignment);
+        Unsafe.InitBlockUnaligned(_block, 0, UnifiedBlockSize);
 
         _handle = _block;
         _isSleepingState = (int*)((byte*)_block + 32);
@@ -46,8 +64,8 @@ public sealed unsafe class ThreadParker : IDisposable
             nint hEvent = Kernel32.CreateEventW(null, false, false, null);
             if (hEvent == 0)
             {
-                NativeMemory.AlignedFree(_block);
-                int error = Marshal.GetLastPInvokeError();
+                HeapAllocator.Free(_block);
+                int error = PlatformCompat.GetLastError();
                 throw new Win32Exception(error, "Failed to create anonymous Win32 event.");
             }
             *(nint*)_handle = hEvent;
@@ -56,15 +74,16 @@ public sealed unsafe class ThreadParker : IDisposable
         {
             if (Libc.SemInit(_handle, pshared: 0, value: 0) != 0)
             {
-                int error = Marshal.GetLastPInvokeError();
-                NativeMemory.AlignedFree(_block);
+                int error = PlatformCompat.GetLastError();
+                HeapAllocator.Free(_block);
                 throw new IOException($"Failed to initialize POSIX semaphore ({error}).");
             }
         }
         else
         {
-            NativeMemory.AlignedFree(_block);
-            throw new PlatformNotSupportedException("Unsupported operating system.");
+            // Fallback for macOS / mobile / sandboxed runtimes
+            _managedEvent = new AutoResetEvent(false);
+            _managedGcHandle = GCHandle.Alloc(_managedEvent, GCHandleType.Normal);
         }
     }
 
@@ -109,7 +128,6 @@ public sealed unsafe class ThreadParker : IDisposable
                         ) == StateSignaled
                     )
                     {
-                        // Drain any native token in the OS primitive
                         DrainNativeTokens();
                         return false;
                     }
@@ -125,6 +143,12 @@ public sealed unsafe class ThreadParker : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void DrainNativeTokens()
     {
+        if (_managedEvent != null)
+        {
+            _managedEvent.Reset();
+            return;
+        }
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
             while (Volatile.Read(ref _isDisposed) == 0 && Libc.SemTryWait(_handle) == 0) { }
@@ -161,8 +185,43 @@ public sealed unsafe class ThreadParker : IDisposable
             if (Volatile.Read(ref _isDisposed) != 0)
                 return false;
 
+            if (_managedEvent != null)
+            {
+                if (
+                    Interlocked.CompareExchange(ref *_isSleepingState, StateRunning, StateSignaled)
+                    == StateSignaled
+                )
+                {
+                    _managedEvent.Reset();
+                    return true;
+                }
+
+                Interlocked.CompareExchange(ref *_isSleepingState, StateParked, StateRunning);
+                try
+                {
+                    return _managedEvent.WaitOne(timeoutMs);
+                }
+                finally
+                {
+                    Volatile.Write(ref *_isSleepingState, StateRunning);
+                    _managedEvent.Reset();
+                }
+            }
+
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
+                if (
+                    Interlocked.CompareExchange(ref *_isSleepingState, StateRunning, StateSignaled)
+                    == StateSignaled
+                )
+                {
+                    nint hEv = *(nint*)_handle;
+                    if (hEv != 0)
+                        Kernel32.WaitForSingleObject(hEv, 0);
+                    return true;
+                }
+
+                Interlocked.CompareExchange(ref *_isSleepingState, StateParked, StateRunning);
                 nint hEvent = *(nint*)_handle;
                 try
                 {
@@ -196,7 +255,7 @@ public sealed unsafe class ThreadParker : IDisposable
                     {
                         while (Volatile.Read(ref _isDisposed) == 0 && Libc.SemWait(_handle) != 0)
                         {
-                            if (Marshal.GetLastPInvokeError() != EINTR)
+                            if (PlatformCompat.GetLastError() != EINTR)
                                 break;
                         }
                         acquired = true;
@@ -226,7 +285,7 @@ public sealed unsafe class ThreadParker : IDisposable
                                 break;
                             }
 
-                            int err = Marshal.GetLastPInvokeError();
+                            int err = PlatformCompat.GetLastError();
                             if (err == EINTR)
                                 continue;
 
@@ -254,6 +313,18 @@ public sealed unsafe class ThreadParker : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Unpark() => NativeHandle.Unpark();
 
+    private static void OnManagedUnparkTrampoline(void* context)
+    {
+        if (context == null)
+            return;
+
+        var handle = GCHandle.FromIntPtr((IntPtr)context);
+        if (handle.IsAllocated && handle.Target is AutoResetEvent ev)
+        {
+            ev.Set();
+        }
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _isDisposed, 1) != 0)
@@ -270,7 +341,13 @@ public sealed unsafe class ThreadParker : IDisposable
             spinner.SpinOnce();
         }
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        if (_managedEvent != null)
+        {
+            _managedEvent.Dispose();
+            if (_managedGcHandle.IsAllocated)
+                _managedGcHandle.Free();
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             nint hEvent = *(nint*)_handle;
             if (hEvent != 0)
@@ -283,6 +360,6 @@ public sealed unsafe class ThreadParker : IDisposable
             Libc.SemDestroy(_handle);
         }
 
-        NativeMemory.AlignedFree(_block);
+        HeapAllocator.Free(_block);
     }
 }

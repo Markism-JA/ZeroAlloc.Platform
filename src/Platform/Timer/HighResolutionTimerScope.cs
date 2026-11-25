@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Platform.Native.Windows;
 using Platform.Native.Windows.Enums;
 
@@ -12,7 +13,7 @@ public class HighResolutionTimerScope : IDisposable
     {
         _periodMs = periodMs;
 
-        if (OperatingSystem.IsWindows())
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             MmResult result = Winmm.TimeBeginPeriod(periodMs);
             _success = result == MmResult.NoError;
@@ -25,7 +26,7 @@ public class HighResolutionTimerScope : IDisposable
 
     public void Dispose()
     {
-        if (_success && OperatingSystem.IsWindows())
+        if (_success && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             Winmm.TimeEndPeriod(_periodMs);
         }

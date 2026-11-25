@@ -1,3 +1,4 @@
+using Platform.Internal;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -55,7 +56,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
         MemoryMapOptions options = MemoryMapOptions.PreFault
     )
     {
-        ArgumentNullException.ThrowIfNull(plan);
+        PlatformCompat.ThrowIfNull(plan);
         nuint totalBytes = plan.CalculateTotalBytes();
         var map = NativeMemoryMap.CreateNewShared(name, totalBytes, protection, options);
         return Create(map, magic, abiVersion, nodeId, plan);
@@ -74,7 +75,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
         MemoryMapOptions options = MemoryMapOptions.None
     )
     {
-        ArgumentNullException.ThrowIfNull(plan);
+        PlatformCompat.ThrowIfNull(plan);
         nuint totalBytes = plan.CalculateTotalBytes();
         var map = NativeMemoryMap.OpenExistingShared(name, totalBytes, protection, options);
         return Attach(map, expectedMagic, expectedAbiVersion, timeout);
@@ -94,7 +95,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
         MemoryMapOptions options = MemoryMapOptions.PreFault
     )
     {
-        ArgumentNullException.ThrowIfNull(plan);
+        PlatformCompat.ThrowIfNull(plan);
         nuint totalBytes = plan.CalculateTotalBytes();
         var map = NativeMemoryMap.OpenOrCreateShared(
             name,
@@ -129,7 +130,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
         MemoryMapOptions options = MemoryMapOptions.None
     )
     {
-        ArgumentNullException.ThrowIfNull(plan);
+        PlatformCompat.ThrowIfNull(plan);
         nuint totalBytes = plan.CalculateTotalBytes();
         var map = NativeMemoryMap.CreateNewFile(filePath, totalBytes, protection, options);
         return Create(map, magic, abiVersion, nodeId, plan);
@@ -145,7 +146,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
         MemoryMapOptions options = MemoryMapOptions.None
     )
     {
-        ArgumentNullException.ThrowIfNull(plan);
+        PlatformCompat.ThrowIfNull(plan);
         nuint totalBytes = plan.CalculateTotalBytes();
         var map = NativeMemoryMap.OpenExistingFile(filePath, totalBytes, protection, options);
         return Attach(map, expectedMagic, expectedAbiVersion, timeout);
@@ -163,8 +164,8 @@ public sealed unsafe class SharedMemorySession : IDisposable
         SharedMemoryPlan plan
     )
     {
-        ArgumentNullException.ThrowIfNull(map);
-        ArgumentNullException.ThrowIfNull(plan);
+        PlatformCompat.ThrowIfNull(map);
+        PlatformCompat.ThrowIfNull(plan);
 
         var sb = (SharedMemorySuperblock*)map.Pointer;
         plan.FormatSuperblock(sb, magic, abiVersion, nodeId, map.Length);
@@ -182,7 +183,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
         TimeSpan timeout = default
     )
     {
-        ArgumentNullException.ThrowIfNull(map);
+        PlatformCompat.ThrowIfNull(map);
 
         if (map.Length < SharedMemorySuperblock.SuperblockSize)
         {
@@ -251,7 +252,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public SharedMemoryRegion GetRegion(uint tag)
     {
-        ObjectDisposedException.ThrowIf(_isDisposed != 0, this);
+        PlatformCompat.ThrowIfDisposed(_isDisposed != 0, this);
 
         for (int i = 0; i < _cachedRegions.Length; i++)
         {
@@ -268,9 +269,9 @@ public sealed unsafe class SharedMemorySession : IDisposable
     {
         uint rawTag = Unsafe.SizeOf<TEnum>() switch
         {
-            4 => Unsafe.BitCast<TEnum, uint>(tag),
-            2 => Unsafe.BitCast<TEnum, ushort>(tag),
-            1 => Unsafe.BitCast<TEnum, byte>(tag),
+            4 => PlatformCompat.BitCast<TEnum, uint>(tag),
+            2 => PlatformCompat.BitCast<TEnum, ushort>(tag),
+            1 => PlatformCompat.BitCast<TEnum, byte>(tag),
             _ => (uint)Convert.ToInt64(tag),
         };
 
@@ -291,7 +292,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void BeatHeartbeat()
     {
-        ObjectDisposedException.ThrowIf(_isDisposed != 0, this);
+        PlatformCompat.ThrowIfDisposed(_isDisposed != 0, this);
         Volatile.Write(ref _superblock->HeartbeatTicks, Stopwatch.GetTimestamp());
     }
 
@@ -319,7 +320,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
     /// </summary>
     public void MarkFaulted()
     {
-        ObjectDisposedException.ThrowIf(_isDisposed != 0, this);
+        PlatformCompat.ThrowIfDisposed(_isDisposed != 0, this);
         Volatile.Write(ref _superblock->State, (uint)SharedMemoryState.Faulted);
         Thread.MemoryBarrier();
     }

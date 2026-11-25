@@ -1,14 +1,17 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <PackageId>ZeroAlloc.Platform</PackageId>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net10.0;netstandard2.1</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
-    <Description>Zero-allocation OS primitives for .NET 10: POSIX/Win32 shared memory maps, RDTSC monotonic clocks, futex/semaphore thread parkers, CPU core affinity pinning, and high-resolution timer scopes.</Description>
-    <PackageTags>platform;os;shared-memory;mmap;rdtsc;threading;affinity;zero-allocation;unsafe;dotnet</PackageTags>
+    <Description>Zero-allocation OS primitives for .NET 10 and
+      netstandard2.1 (64-bit AnyCPU):
+      POSIX/Win32 shared memory maps, RDTSC monotonic clocks, futex/semaphore thread parkers with
+      managed fallback, CPU core affinity pinning, and high-resolution timer scopes.</Description>
+    <PackageTags>platform;os;shared-memory;mmap;rdtsc;threading;affinity;zero-allocation;unsafe;netstandard2.1;dotnet</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <IncludeSymbols>true</IncludeSymbols>
@@ -18,5 +21,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Platform.Tests" />
     <PackageReference Include="MinVer" PrivateAssets="All" />
+    <PackageReference Include="PolySharp" PrivateAssets="all" Condition="'$(TargetFramework)' == 'netstandard2.1'" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Condition="'$(TargetFramework)' == 'netstandard2.1'" />
+    <PackageReference Include="ZeroAlloc.Memory" />
   </ItemGroup>
 </Project>

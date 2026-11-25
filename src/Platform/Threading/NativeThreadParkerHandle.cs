@@ -6,16 +6,39 @@ using Platform.Native.Windows;
 namespace Platform.Threading;
 
 [StructLayout(LayoutKind.Sequential, Pack = 8)]
-[method: MethodImpl(MethodImplOptions.AggressiveInlining)]
-public readonly unsafe struct NativeThreadParkerHandle(void* osHandle, int* isSleepingFlag)
+public readonly unsafe struct NativeThreadParkerHandle
 {
     private const int StateRunning = 0;
     private const int StateParked = 1;
     private const int StateSignaled = 2;
 
-    public void* RawHandle => osHandle;
-    public int* SleepingFlag => isSleepingFlag;
-    public bool IsAllocated => osHandle != null;
+    private readonly void* _osHandle;
+    private readonly int* _isSleepingFlag;
+    private readonly delegate*<void*, void> _managedUnparkCallback;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public NativeThreadParkerHandle(void* osHandle, int* isSleepingFlag)
+    {
+        _osHandle = osHandle;
+        _isSleepingFlag = isSleepingFlag;
+        _managedUnparkCallback = null;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal NativeThreadParkerHandle(
+        void* managedContext,
+        int* isSleepingFlag,
+        delegate*<void*, void> managedUnparkCallback
+    )
+    {
+        _osHandle = managedContext;
+        _isSleepingFlag = isSleepingFlag;
+        _managedUnparkCallback = managedUnparkCallback;
+    }
+
+    public void* RawHandle => _osHandle;
+    public int* SleepingFlag => _isSleepingFlag;
+    public bool IsAllocated => _osHandle != null;
 
     /// <summary>
     /// Unparks the target thread if it is currently parked or armed to park.
@@ -31,29 +54,35 @@ public readonly unsafe struct NativeThreadParkerHandle(void* osHandle, int* isSl
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Unpark()
     {
-        if (osHandle == null)
+        if (_osHandle == null)
             return;
 
-        if (isSleepingFlag != null)
+        if (_isSleepingFlag != null)
         {
             // Atomically latch StateSignaled.
-            // If previous state was StateParked (1), the thread is armed or sleeping in sem_timedwait -> wake kernel.
+            // If previous state was StateParked (1), the thread is armed or sleeping -> wake kernel/event.
             // If previous state was StateRunning (0), TryArm() will fail on the consumer side -> skip syscall.
             // If previous state was StateSignaled (2), already signaled -> skip syscall.
-            int prevState = Interlocked.Exchange(ref *isSleepingFlag, StateSignaled);
+            int prevState = Interlocked.Exchange(ref *_isSleepingFlag, StateSignaled);
             if (prevState != StateParked)
             {
                 return;
             }
         }
 
+        if (_managedUnparkCallback != null)
+        {
+            _managedUnparkCallback(_osHandle);
+            return;
+        }
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            Libc.SemPost(osHandle);
+            Libc.SemPost(_osHandle);
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            Kernel32.SetEvent((nint)osHandle);
+            Kernel32.SetEvent((nint)_osHandle);
         }
     }
 }

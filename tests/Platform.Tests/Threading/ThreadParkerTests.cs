@@ -4,28 +4,32 @@ using Platform.Threading;
 
 namespace Platform.Tests.Threading;
 
-public unsafe class ThreadParkerTests
+public class ThreadParkerTests
 {
     private const int StateRunning = ThreadParker.StateRunning;
     private const int StateParked = ThreadParker.StateParked;
     private const int StateSignaled = ThreadParker.StateSignaled;
 
+    private static unsafe int ReadFlag(NativeThreadParkerHandle handle) =>
+        Volatile.Read(ref *handle.SleepingFlag);
+
     [Fact]
-    public void NativeHandle_IsBlittableAndExpectedSize()
+    public unsafe void NativeHandle_IsBlittableAndExpectedSize()
     {
         Assert.False(RuntimeHelpers.IsReferenceOrContainsReferences<NativeThreadParkerHandle>());
-        Assert.Equal(sizeof(nint) * 2, sizeof(NativeThreadParkerHandle));
+        Assert.Equal(sizeof(nint) * 3, sizeof(NativeThreadParkerHandle));
     }
 
     [Fact]
-    public void InitialState_IsRunning()
+    public unsafe void InitialState_IsRunning()
     {
         using var parker = new ThreadParker();
         var handle = parker.NativeHandle;
 
         Assert.True(handle.IsAllocated);
         Assert.NotEqual(0, (nint)handle.SleepingFlag);
-        Assert.Equal(StateRunning, Volatile.Read(ref *handle.SleepingFlag));
+        Assert.Equal(StateRunning, ReadFlag(handle));
+        Assert.False(parker.IsSleeping);
     }
 
     [Fact]
@@ -35,30 +39,47 @@ public unsafe class ThreadParkerTests
         var handle = parker.NativeHandle;
 
         Assert.True(parker.TryArm());
-        Assert.Equal(StateParked, Volatile.Read(ref *handle.SleepingFlag));
+        Assert.Equal(StateParked, ReadFlag(handle));
+        Assert.True(parker.IsSleeping);
 
         // Disarm resets back to Running
         parker.Disarm();
-        Assert.Equal(StateRunning, Volatile.Read(ref *handle.SleepingFlag));
+        Assert.Equal(StateRunning, ReadFlag(handle));
+        Assert.False(parker.IsSleeping);
     }
 
     [Fact]
-    public void TryArm_FailsWhenAlreadySignaled()
+    public void TryArm_FailsAndConsumesSignalWhenAlreadySignaled()
     {
         using var parker = new ThreadParker();
         var handle = parker.NativeHandle;
 
         // Producer signals before consumer arms
         handle.Unpark();
-        Assert.Equal(StateSignaled, Volatile.Read(ref *handle.SleepingFlag));
+        Assert.Equal(StateSignaled, ReadFlag(handle));
 
-        // TryArm must fail to indicate work was received
+        // TryArm fails to abort sleep and consumes StateSignaled -> StateRunning
         Assert.False(parker.TryArm());
+        Assert.Equal(StateRunning, ReadFlag(handle));
 
-        // Subsequent Park immediately consumes the signal and resets to StateRunning
+        // Subsequent TryArm succeeds cleanly
+        Assert.True(parker.TryArm());
+        parker.Disarm();
+        Assert.Equal(StateRunning, ReadFlag(handle));
+    }
+
+    [Fact]
+    public void Park_ConsumesPreSignalImmediately()
+    {
+        using var parker = new ThreadParker();
+        var handle = parker.NativeHandle;
+
+        handle.Unpark();
+        Assert.Equal(StateSignaled, ReadFlag(handle));
+
         bool acquired = parker.Park(timeoutMs: 1000);
         Assert.True(acquired);
-        Assert.Equal(StateRunning, Volatile.Read(ref *handle.SleepingFlag));
+        Assert.Equal(StateRunning, ReadFlag(handle));
     }
 
     [Fact]
@@ -73,7 +94,7 @@ public unsafe class ThreadParkerTests
         sw.Stop();
 
         Assert.False(signaled);
-        Assert.Equal(StateRunning, Volatile.Read(ref *parker.NativeHandle.SleepingFlag));
+        Assert.Equal(StateRunning, ReadFlag(parker.NativeHandle));
         Assert.True(
             sw.ElapsedMilliseconds >= 30,
             $"Expected timeout ~50ms, elapsed: {sw.ElapsedMilliseconds}ms"
@@ -81,7 +102,7 @@ public unsafe class ThreadParkerTests
     }
 
     [Fact]
-    public void Unpark_WakesParkedThreadImmediately()
+    public async Task Unpark_WakesParkedThreadImmediately()
     {
         using var parker = new ThreadParker();
         var handle = parker.NativeHandle;
@@ -105,15 +126,15 @@ public unsafe class ThreadParkerTests
 
         // Ensure worker has entered kernel wait before unparking
         SpinWait.SpinUntil(
-            () => Volatile.Read(ref *handle.SleepingFlag) == StateParked,
+            () => ReadFlag(handle) == StateParked,
             TimeSpan.FromSeconds(1)
         );
 
         handle.Unpark();
 
-        Assert.True(task.Wait(TimeSpan.FromSeconds(2)), "Park did not wake within timeout.");
+        await task.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.True(parkResult);
-        Assert.Equal(StateRunning, Volatile.Read(ref *handle.SleepingFlag));
+        Assert.Equal(StateRunning, ReadFlag(handle));
     }
 
     [Fact]
@@ -138,7 +159,7 @@ public unsafe class ThreadParkerTests
             sw.ElapsedMilliseconds < 250,
             $"Expected immediate bypass, took {sw.ElapsedMilliseconds}ms"
         );
-        Assert.Equal(StateRunning, Volatile.Read(ref *handle.SleepingFlag));
+        Assert.Equal(StateRunning, ReadFlag(handle));
     }
 
     [Fact]
@@ -153,7 +174,7 @@ public unsafe class ThreadParkerTests
 
         bool acquired = parker.Park(timeoutMs: 5000);
         Assert.True(acquired);
-        Assert.Equal(StateRunning, Volatile.Read(ref *handle.SleepingFlag));
+        Assert.Equal(StateRunning, ReadFlag(handle));
     }
 
     [Fact]
@@ -168,11 +189,9 @@ public unsafe class ThreadParkerTests
             handle.Unpark();
         }
 
-        // Cycle 1: Pre-signaled, must return immediately
+        // Cycle 1: Pre-signaled; TryArm must fail, consume signal, and drain surplus tokens
         Assert.False(parker.TryArm());
-        bool firstPark = parker.Park(timeoutMs: 500);
-        Assert.True(firstPark);
-        Assert.Equal(StateRunning, Volatile.Read(ref *handle.SleepingFlag));
+        Assert.Equal(StateRunning, ReadFlag(handle));
 
         // Cycle 2: All surplus signals must have been drained; this pass MUST block and timeout
         Assert.True(parker.TryArm());
@@ -186,11 +205,11 @@ public unsafe class ThreadParkerTests
             sw.ElapsedMilliseconds >= 30,
             $"Phantom fall-through detected! Took {sw.ElapsedMilliseconds}ms"
         );
-        Assert.Equal(StateRunning, Volatile.Read(ref *handle.SleepingFlag));
+        Assert.Equal(StateRunning, ReadFlag(handle));
     }
 
     [Fact]
-    public void ConcurrentProducers_HammeringWake_WakesThreadSafely()
+    public async Task ConcurrentProducers_HammeringWake_WakesThreadSafely()
     {
         using var parker = new ThreadParker();
         var handle = parker.NativeHandle;
@@ -210,8 +229,8 @@ public unsafe class ThreadParkerTests
                 }
                 else
                 {
-                    // Pre-signaled before TryArm
-                    woke = parker.Park(timeoutMs: 2000);
+                    // Pre-signaled before TryArm: TryArm consumed the signal and aborted sleep
+                    woke = true;
                 }
             });
 
@@ -231,19 +250,13 @@ public unsafe class ThreadParkerTests
                 });
             }
 
-            Assert.True(
-                Task.WaitAll(producerTasks, TimeSpan.FromSeconds(3)),
-                $"Producers timed out on iteration {i}"
-            );
-            Assert.True(
-                consumerTask.Wait(TimeSpan.FromSeconds(3)),
-                $"Consumer hung on iteration {i}"
-            );
+            await Task.WhenAll(producerTasks).WaitAsync(TimeSpan.FromSeconds(3));
+            await consumerTask.WaitAsync(TimeSpan.FromSeconds(3));
             Assert.True(woke, $"Consumer timed out waiting on iteration {i}");
 
             // If a lagging producer latched StateSignaled after consumer completed,
             // consume that pending signal so the next iteration starts fresh.
-            int finalState = Volatile.Read(ref *handle.SleepingFlag);
+            int finalState = ReadFlag(handle);
             Assert.True(
                 finalState is StateRunning or StateSignaled,
                 $"Unexpected state {finalState} on iteration {i}"
@@ -254,7 +267,7 @@ public unsafe class ThreadParkerTests
                 parker.Park(0);
             }
 
-            Assert.Equal(StateRunning, Volatile.Read(ref *handle.SleepingFlag));
+            Assert.Equal(StateRunning, ReadFlag(handle));
         }
     }
 
@@ -265,19 +278,19 @@ public unsafe class ThreadParkerTests
         var handle = parker.NativeHandle;
 
         Assert.True(parker.TryArm());
-        Assert.Equal(StateParked, Volatile.Read(ref *handle.SleepingFlag));
+        Assert.Equal(StateParked, ReadFlag(handle));
 
         parker.Disarm();
-        Assert.Equal(StateRunning, Volatile.Read(ref *handle.SleepingFlag));
+        Assert.Equal(StateRunning, ReadFlag(handle));
 
         // Since it was disarmed, it should arm successfully again
         Assert.True(parker.TryArm());
         parker.Disarm();
-        Assert.Equal(StateRunning, Volatile.Read(ref *handle.SleepingFlag));
+        Assert.Equal(StateRunning, ReadFlag(handle));
     }
 
     [Fact]
-    public void Dispose_IsIdempotentAndUnblocksWaiters()
+    public async Task Dispose_IsIdempotentAndUnblocksWaiters()
     {
         var parker = new ThreadParker();
         var handle = parker.NativeHandle;
@@ -298,7 +311,7 @@ public unsafe class ThreadParkerTests
 
         // Wait until armed/parked
         SpinWait.SpinUntil(
-            () => Volatile.Read(ref *handle.SleepingFlag) != StateRunning,
+            () => ReadFlag(handle) != StateRunning,
             TimeSpan.FromSeconds(1)
         );
 
@@ -308,7 +321,7 @@ public unsafe class ThreadParkerTests
         // Multiple dispose calls must be idempotent no-ops
         parker.Dispose();
 
-        Assert.True(task.Wait(TimeSpan.FromSeconds(2)), "Task failed to terminate after Dispose.");
+        await task.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.True(parkCompleted);
     }
 }
