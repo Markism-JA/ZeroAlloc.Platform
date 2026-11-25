@@ -184,10 +184,11 @@ public sealed unsafe partial class NativeMemoryMap
         errorCode = 0;
         string fullPath = Path.GetFullPath(filePath);
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        if (PosixAbi.IsPosix)
         {
-            PosixOpenFlags oflags =
-                PosixOpenFlags.Create | PosixOpenFlags.Exclusive | PosixOpenFlags.ReadWrite;
+            PosixOpenFlags oflags = PosixAbi.TranslateOpenFlags(
+                PosixOpenFlags.Create | PosixOpenFlags.Exclusive | PosixOpenFlags.ReadWrite
+            );
             int fd = Libc.Open(fullPath, oflags, _defaultPosixShmAndFileMode);
             if (fd < 0)
             {
@@ -202,7 +203,7 @@ public sealed unsafe partial class NativeMemoryMap
             try
             {
                 // Guarantee physical blocks are allocated up front to avoid runtime SIGBUS on disk exhaustion
-                int allocateResult = Libc.Posix_Fallocate(fd, 0, (nint)byteCount);
+                int allocateResult = PosixAbi.AllocateFileSpace(fd, byteCount);
                 if (allocateResult != 0)
                 {
                     errorCode = allocateResult;
@@ -210,12 +211,7 @@ public sealed unsafe partial class NativeMemoryMap
                 }
 
                 MemoryMapProt prot = TranslatePosixProt(protection);
-                MemoryMapFlags mapFlags = MemoryMapFlags.Shared;
-
-                if ((options & MemoryMapOptions.PreFault) != 0)
-                {
-                    mapFlags |= MemoryMapFlags.Populate;
-                }
+                MemoryMapFlags mapFlags = PosixAbi.WithPreFault(MemoryMapFlags.Shared, options);
 
                 ptr = Libc.Mmap(null, byteCount, prot, mapFlags, fd, 0);
                 if (ptr == Libc.MAP_FAILED)
@@ -376,7 +372,7 @@ public sealed unsafe partial class NativeMemoryMap
         errorCode = 0;
         string fullPath = Path.GetFullPath(filePath);
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        if (PosixAbi.IsPosix)
         {
             PosixOpenFlags oflags =
                 (protection == MemoryMapProtection.Read)
@@ -400,13 +396,13 @@ public sealed unsafe partial class NativeMemoryMap
             nuint mappingLength = 0;
             try
             {
-                if (Libc.Fstat(fd, out Stat stat) != 0)
+                if (!PosixAbi.TryGetFileSize(fd, out long fileSizeRaw))
                 {
                     errorCode = PlatformCompat.GetLastError();
                     return NativeMapOpenStatus.SystemError;
                 }
 
-                nuint fileSize = (nuint)stat.st_size;
+                nuint fileSize = (nuint)fileSizeRaw;
                 if (fileSize == 0)
                 {
                     errorCode = PosixErrors.EINVAL;
@@ -421,12 +417,7 @@ public sealed unsafe partial class NativeMemoryMap
                 }
 
                 MemoryMapProt prot = TranslatePosixProt(protection);
-                MemoryMapFlags mapFlags = MemoryMapFlags.Shared;
-
-                if ((options & MemoryMapOptions.PreFault) != 0)
-                {
-                    mapFlags |= MemoryMapFlags.Populate;
-                }
+                MemoryMapFlags mapFlags = PosixAbi.WithPreFault(MemoryMapFlags.Shared, options);
 
                 ptr = Libc.Mmap(null, mappingLength, prot, mapFlags, fd, 0);
                 if (ptr == Libc.MAP_FAILED)

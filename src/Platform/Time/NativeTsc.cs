@@ -217,16 +217,13 @@ public static unsafe class NativeTsc
             return Kernel32.VirtualAlloc(null, size, 0x3000, 0x40);
         }
 
-        if (
-            RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
-            || RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-        )
+        if (PosixAbi.IsPosix)
         {
             void* ptr = Libc.Mmap(
                 null,
                 size,
                 MemoryMapProt.Read | MemoryMapProt.Write | MemoryMapProt.Execute,
-                MemoryMapFlags.Private | MemoryMapFlags.Anonymous,
+                MemoryMapFlags.Private | PosixAbi.AnonymousMapFlag,
                 -1,
                 0
             );

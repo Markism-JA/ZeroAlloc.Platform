@@ -96,22 +96,20 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
     {
         PlatformCompat.ThrowIfZero(byteCount);
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        if (PosixAbi.IsPosix)
         {
             MemoryMapProt prot = TranslatePosixProt(protection);
-            MemoryMapFlags flags = MemoryMapFlags.Anonymous | MemoryMapFlags.Private;
-
-            if ((options & MemoryMapOptions.PreFault) != 0)
-            {
-                flags |= MemoryMapFlags.Populate;
-            }
+            MemoryMapFlags flags = PosixAbi.WithPreFault(
+                PosixAbi.AnonymousMapFlag | MemoryMapFlags.Private,
+                options
+            );
 
             void* ptr = Libc.Mmap(null, byteCount, prot, flags, _anonymousFd, 0);
             if (ptr == Libc.MAP_FAILED)
             {
                 int error = PlatformCompat.GetLastError();
                 throw new IOException(
-                    $"Linux mmap anonymous failed ({error}): {PlatformCompat.GetErrorMessage(error)}"
+                    $"POSIX mmap anonymous failed ({error}): {PlatformCompat.GetErrorMessage(error)}"
                 );
             }
 
@@ -420,9 +418,9 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
     /// </summary>
     public static void UnlinkShared(string name)
     {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        if (PosixAbi.IsPosix)
         {
-            Libc.Shm_unlink(NormalizePosixShmName(name));
+            PosixAbi.UnlinkShared(PosixAbi.GetNormalizedSharedPath(name));
         }
     }
 
@@ -484,23 +482,23 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
     /// </param>
     public void Flush(bool flushToDisk = false)
     {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        if (PosixAbi.IsPosix)
         {
-            if (Libc.Msync(_pointer, _length, MsyncFlags.Sync) != 0)
+            if (Libc.Msync(_pointer, _length, PosixAbi.MsyncSyncFlag) != 0)
             {
                 int error = PlatformCompat.GetLastError();
                 throw new IOException(
-                    $"Linux msync failed ({error}): {PlatformCompat.GetErrorMessage(error)}"
+                    $"POSIX msync failed ({error}): {PlatformCompat.GetErrorMessage(error)}"
                 );
             }
 
             if (flushToDisk && _fileDescriptor >= 0)
             {
-                if (Libc.Fdatasync(_fileDescriptor) != 0)
+                if (PosixAbi.FlushDataSync(_fileDescriptor) != 0)
                 {
                     int error = PlatformCompat.GetLastError();
                     throw new IOException(
-                        $"Linux fdatasync failed ({error}): {PlatformCompat.GetErrorMessage(error)}"
+                        $"POSIX data sync failed ({error}): {PlatformCompat.GetErrorMessage(error)}"
                     );
                 }
             }
@@ -550,13 +548,13 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
         map = null;
         errorCode = 0;
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        if (PosixAbi.IsPosix)
         {
-            string shmPath = NormalizePosixShmName(name);
+            string shmPath = PosixAbi.GetNormalizedSharedPath(name);
             PosixOpenFlags oflags =
                 PosixOpenFlags.Create | PosixOpenFlags.Exclusive | PosixOpenFlags.ReadWrite;
 
-            int fd = Libc.Shm_open(shmPath, oflags, _defaultPosixShmAndFileMode);
+            int fd = PosixAbi.OpenShared(shmPath, oflags, _defaultPosixShmAndFileMode);
             if (fd < 0)
             {
                 errorCode = PlatformCompat.GetLastError();
@@ -576,12 +574,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                 }
 
                 MemoryMapProt prot = TranslatePosixProt(protection);
-                MemoryMapFlags mapFlags = MemoryMapFlags.Shared;
-
-                if ((options & MemoryMapOptions.PreFault) != 0)
-                {
-                    mapFlags |= MemoryMapFlags.Populate;
-                }
+                MemoryMapFlags mapFlags = PosixAbi.WithPreFault(MemoryMapFlags.Shared, options);
 
                 ptr = Libc.Mmap(null, byteCount, prot, mapFlags, fd, 0);
                 if (ptr == Libc.MAP_FAILED)
@@ -604,7 +597,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
                     {
                         Libc.Munmap(ptr, byteCount);
                     }
-                    Libc.Shm_unlink(shmPath);
+                    PosixAbi.UnlinkShared(shmPath);
                 }
                 Libc.Close(fd);
             }
@@ -683,15 +676,15 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
         map = null;
         errorCode = 0;
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        if (PosixAbi.IsPosix)
         {
-            string shmPath = NormalizePosixShmName(name);
+            string shmPath = PosixAbi.GetNormalizedSharedPath(name);
             PosixOpenFlags oflags =
                 (protection == MemoryMapProtection.Read)
                     ? PosixOpenFlags.ReadOnly
                     : PosixOpenFlags.ReadWrite;
 
-            int fd = Libc.Shm_open(shmPath, oflags, _posixOpenExistingMode);
+            int fd = PosixAbi.OpenShared(shmPath, oflags, _posixOpenExistingMode);
             if (fd < 0)
             {
                 errorCode = PlatformCompat.GetLastError();
@@ -706,30 +699,25 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
 
             try
             {
-                if (Libc.Fstat(fd, out Stat stat) != 0)
+                if (!PosixAbi.TryGetFileSize(fd, out long fileSize))
                 {
                     errorCode = PlatformCompat.GetLastError();
                     return NativeMapOpenStatus.SystemError;
                 }
 
-                if (stat.st_size == 0)
+                if (fileSize == 0)
                 {
                     return NativeMapOpenStatus.NotInitialized;
                 }
 
-                if ((nuint)stat.st_size < byteCount)
+                if ((nuint)fileSize < byteCount)
                 {
                     errorCode = PosixErrors.EINVAL;
                     return NativeMapOpenStatus.InvalidSize;
                 }
 
                 MemoryMapProt prot = TranslatePosixProt(protection);
-                MemoryMapFlags mapFlags = MemoryMapFlags.Shared;
-
-                if ((options & MemoryMapOptions.PreFault) != 0)
-                {
-                    mapFlags |= MemoryMapFlags.Populate;
-                }
+                MemoryMapFlags mapFlags = PosixAbi.WithPreFault(MemoryMapFlags.Shared, options);
 
                 void* ptr = Libc.Mmap(null, byteCount, prot, mapFlags, fd, 0);
                 if (ptr == Libc.MAP_FAILED)
@@ -825,6 +813,8 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
             Libc.Madvise(ptr, length, MadviseAdvice.Sequential);
         if ((options & MemoryMapOptions.RandomAccess) != 0)
             Libc.Madvise(ptr, length, MadviseAdvice.Random);
+        if (PosixAbi.IsMacOS && (options & MemoryMapOptions.PreFault) != 0)
+            Libc.Madvise(ptr, length, MadviseAdvice.WillNeed);
     }
 
     private static void ApplyWindowsPrefetch(void* ptr, nuint length, MemoryMapOptions options)
@@ -895,7 +885,7 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
 
         if (_pointer != null)
         {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            if (PosixAbi.IsPosix)
             {
                 if (_pointer != Libc.MAP_FAILED)
                 {
@@ -923,17 +913,17 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
             }
         }
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        if (PosixAbi.IsPosix)
         {
             if (_fileDescriptor >= 0)
             {
                 Libc.Close(_fileDescriptor);
             }
 
-            // Only shared IPC memory created via shm_open unlinks on dispose; persistent files never unlink.
+            // Only shared IPC memory unlinks on dispose; persistent files never unlink.
             if (_ownsShm && _shmName != null)
             {
-                Libc.Shm_unlink(_shmName);
+                PosixAbi.UnlinkShared(_shmName);
             }
         }
     }

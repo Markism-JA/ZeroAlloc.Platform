@@ -132,6 +132,35 @@ internal static partial class Libc
     public static extern int Fstat(int fd, out Stat buf);
 #endif
 
+#if NET7_0_OR_GREATER
+    [LibraryImport(LibName, EntryPoint = "fstat", SetLastError = true)]
+    public static partial int FstatDarwinArm64(int fd, out DarwinStat buf);
+#else
+    [DllImport(LibName, EntryPoint = "fstat", SetLastError = true)]
+    public static extern int FstatDarwinArm64(int fd, out DarwinStat buf);
+#endif
+
+#if NET7_0_OR_GREATER
+    [LibraryImport(LibName, EntryPoint = "fstat$INODE64", SetLastError = true)]
+    public static partial int FstatDarwinX64(int fd, out DarwinStat buf);
+#else
+    [DllImport(LibName, EntryPoint = "fstat$INODE64", SetLastError = true)]
+    public static extern int FstatDarwinX64(int fd, out DarwinStat buf);
+#endif
+
+#if NET7_0_OR_GREATER
+    [LibraryImport(
+        LibName,
+        EntryPoint = "unlink",
+        SetLastError = true,
+        StringMarshalling = StringMarshalling.Utf8
+    )]
+    public static partial int Unlink(string pathname);
+#else
+    [DllImport(LibName, EntryPoint = "unlink", SetLastError = true, CharSet = CharSet.Ansi)]
+    public static extern int Unlink(string pathname);
+#endif
+
     /// <summary>
     /// Synchronizes a file's in-core state with storage device (data and metadata).
     /// </summary>
