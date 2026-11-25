@@ -56,3 +56,20 @@ jobs:
       - name: Run tests (net10.0, Debug)
         if: matrix.os == 'ubuntu-latest'
         run: dotnet test -c Debug --no-restore --verbosity normal
+
+  benchmark-smoke:
+    name: Benchmark Smoke Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Verify benchmark discovery & dry-run
+        run: |
+          dotnet run --project benchmark/Platform.Benchmark -c Release -- --list flat > /dev/null
+          dotnet run --project benchmark/Platform.Benchmark -c Release -- --job dry --filter "*"

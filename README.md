@@ -33,43 +33,53 @@ Built as Layer 0b of the `ZeroAlloc` ecosystem on top of [`ZeroAlloc.Memory`](ht
 
 ---
 
-## Benchmarks (.NET 10.0.2, Linux x64)
+## Benchmarks
 
-### Time & Clocks (`ClockBenchmarks`)
+Measured with **BenchmarkDotNet v0.15.8** (`DefaultJob`, `[MemoryDiagnoser]`) on **.NET 10.0.2 (X64 RyuJIT x86-64-v4)**, Linux Arch Linux (11th Gen Intel Core i3-1115G4).
 
-| Method | Mean | Ratio vs `Stopwatch` | Allocated |
+### Time & Clocks (`ClockBenchmark`)
+
+| Method | Mean | Error | Ratio | Allocated |
+| :--- | ---: | ---: | ---: | ---: |
+| `Stopwatch_GetTimestamp` *(baseline)* | `18.99 ns` | `±0.26 ns` | `1.00x` | `0 B` |
+| `DateTime_UtcNow_Ticks` | `21.66 ns` | `±0.27 ns` | `1.14x` | `0 B` |
+| **`NativeTsc_NowNs`** | **`8.93 ns`** | **`±0.09 ns`** | **`0.47x` (2.1x faster)** | **`0 B`** |
+| **`PlatformClock_NowNs_Live`** | **`11.10 ns`** | **`±0.22 ns`** | **`0.58x` (1.7x faster)** | **`0 B`** |
+| **`PlatformClock_NowNs_Manual`** | **`0.87 ns`** | **`±0.02 ns`** | **`0.05x`** | **`0 B`** |
+
+### Thread Parking & Wake (`ThreadParkerBenchmark`)
+
+| Method | Mean | Error | Ratio | Allocated |
+| :--- | ---: | ---: | ---: | ---: |
+| `Bcl_AutoResetEvent_Set_Uncontended` *(baseline)* | `220.87 ns` | `±5.50 ns` | `1.00x` | `0 B` |
+| **`ThreadParker_Unpark_ElidedWhileRunning`** | **`5.63 ns`** | **`±0.11 ns`** | **`0.03x` (39x faster)** | **`0 B`** |
+| **`ThreadParker_TryArm_Disarm`** | **`15.96 ns`** | **`±0.11 ns`** | **`0.07x` (14x faster)** | **`0 B`** |
+| `Bcl_AutoResetEvent_PingPongRoundTrip` *(2-thread wake)* | `6,920.17 ns` | `±137.73 ns` | `1.00x` | `0 B` |
+| **`ThreadParker_PingPongRoundTrip`** *(2-thread wake)* | **`4,835.46 ns`** | **`±95.66 ns`** | **`0.70x` (1.43x faster)** | **`0 B`** |
+
+### Memory Maps & Shared Memory (`NativeMemoryMapBenchmark` & `SharedMemoryBenchmark`)
+
+| Method | Mean | Error | Allocated |
 | :--- | ---: | ---: | ---: |
-| `Stopwatch_GetTimestamp` *(baseline)* | `16.27 ns` | `1.00x` | `0 B` |
-| `DateTime_UtcNow_Ticks` | `19.56 ns` | `1.20x` | `0 B` |
-| **`NativeTsc_NowNs`** | **`9.02 ns`** | **`0.55x`** | **`0 B`** |
-| **`PlatformClock_NowNs_Live`** | **`9.03 ns`** | **`0.56x`** | **`0 B`** |
-| **`PlatformClock_NowNs_Manual`** | **`0.57 ns`** | **`0.03x`** | **`0 B`** |
-
-### Thread Parking (`ThreadParkerBenchmarks`)
-
-| Method | Mean | Ratio vs `AutoResetEvent` | Allocated |
-| :--- | ---: | ---: | ---: |
-| `Bcl_AutoResetEvent_Set` *(baseline)* | `173.60 ns` | `1.00x` | `0 B` |
-| **`ThreadParker_Unpark_ElidedWhileRunning`** | **`9.23 ns`** | **`0.05x`** | **`0 B`** |
-| **`ThreadParker_TryArm_Disarm`** | **`14.37 ns`** | **`0.08x`** | **`0 B`** |
-
-### Memory Maps & Shared Memory (`MemoryMapBenchmarks` & `SharedMemoryBenchmarks`)
-
-| Method | Mean | Allocated |
-| :--- | ---: | ---: |
-| `TypedSpan_Sum64KB` (`64 KB` mapped view) | `3.24 µs` | `0 B` |
-| `Session_GetRegion` | `4.05 ns` | `0 B` |
-| `CachedRegion_ReadInt64` | `0.33 ns` | `0 B` |
-| `CachedRegion_AsRefInt64` | `0.62 ns` | `0 B` |
+| `ManagedArray_SequentialSum_64KB` *(baseline)* | `4.01 µs` | `±0.12 µs` | `0 B` |
+| **`NativeMemoryMap_TypedSpan_SequentialSum_64KB`** | **`4.08 µs`** | **`±0.11 µs`** | **`0 B`** |
+| `AnonymousMap_DemandPaged_CreateAndTouchAllPages_64KB` | `18.21 µs` | `±0.66 µs` | `72 B` |
+| **`AnonymousMap_PreFault_CreateAndTouchAllPages_64KB`** | **`16.58 µs`** | **`±0.33 µs`** | **`72 B`** |
+| **`Session_GetRegion`** | **`2.06 ns`** | **`±0.06 ns`** | **`0 B`** |
+| **`CachedRegion_ReadInt64`** | **`0.87 ns`** | **`±0.03 ns`** | **`0 B`** |
+| **`CachedRegion_AsRefInt64`** | **`0.98 ns`** | **`±0.05 ns`** | **`0 B`** |
 
 ---
 
-## Building & Testing
+## Building, Testing & Benchmarking
 
 ```bash
 dotnet build ZeroAlloc.Platform.slnx -c Release
 dotnet test ZeroAlloc.Platform.slnx -c Release
 dotnet test ZeroAlloc.Platform.slnx -c Debug
+
+# Run benchmarks
+dotnet run --project benchmark/Platform.Benchmark -c Release -- --filter "*"
 ```
 
 ---

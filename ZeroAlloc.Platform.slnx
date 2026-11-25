@@ -7,6 +7,6 @@
     <Project Path="tests/Platform.Tests/Platform.Tests.csproj" />
   </Folder>
   <Folder Name="/benchmark/">
-    <Project Path="benchmark/Platform.Time/Platform.Time.csproj" />
+    <Project Path="benchmark/Platform.Benchmark/Platform.Benchmark.csproj" />
   </Folder>
 </Solution>

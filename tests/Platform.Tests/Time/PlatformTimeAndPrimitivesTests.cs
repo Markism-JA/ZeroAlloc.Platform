@@ -1,6 +1,5 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Platform.Threading;
 using Platform.Time;
 using Platform.Timer;
 
@@ -13,10 +12,19 @@ public class PlatformTimeAndPrimitivesTests
     {
         Assert.False(RuntimeHelpers.IsReferenceOrContainsReferences<PlatformClockBlock>());
         Assert.Equal(64, sizeof(PlatformClockBlock));
-        Assert.Equal((nint)0, Marshal.OffsetOf<PlatformClockBlock>(nameof(PlatformClockBlock.UtcEpochNs)));
-        Assert.Equal((nint)8, Marshal.OffsetOf<PlatformClockBlock>(nameof(PlatformClockBlock.UtcEpochMs)));
-        Assert.Equal((nint)16, Marshal.OffsetOf<PlatformClockBlock>(nameof(PlatformClockBlock.MonotonicTicks)));
-        Assert.Equal((nint)24, Marshal.OffsetOf<PlatformClockBlock>(nameof(PlatformClockBlock.IsManual)));
+        Assert.Equal(
+            0,
+            Marshal.OffsetOf<PlatformClockBlock>(nameof(PlatformClockBlock.UtcEpochNs))
+        );
+        Assert.Equal(
+            8,
+            Marshal.OffsetOf<PlatformClockBlock>(nameof(PlatformClockBlock.UtcEpochMs))
+        );
+        Assert.Equal(
+            16,
+            Marshal.OffsetOf<PlatformClockBlock>(nameof(PlatformClockBlock.MonotonicTicks))
+        );
+        Assert.Equal(24, Marshal.OffsetOf<PlatformClockBlock>(nameof(PlatformClockBlock.IsManual)));
     }
 
     [Fact]
@@ -26,13 +34,19 @@ public class PlatformTimeAndPrimitivesTests
         for (int i = 0; i < 10_000; i++)
         {
             long curr = NativeTsc.NowNs();
-            Assert.True(curr >= prev, $"Monotonicity violated at iter {i}: prev={prev}, curr={curr}");
+            Assert.True(
+                curr >= prev,
+                $"Monotonicity violated at iter {i}: prev={prev}, curr={curr}"
+            );
             prev = curr;
         }
 
         long expectedUtcNs = (DateTime.UtcNow.Ticks - DateTime.UnixEpoch.Ticks) * 100L;
         long driftMs = Math.Abs(prev - expectedUtcNs) / 1_000_000L;
-        Assert.True(driftMs < 5_000, $"Expected UTC-anchored timestamp within 5s, drift={driftMs}ms");
+        Assert.True(
+            driftMs < 5_000,
+            $"Expected UTC-anchored timestamp within 5s, drift={driftMs}ms"
+        );
 
         long ms = NativeTsc.NowMs();
         Assert.True(Math.Abs(ms - (prev / 1_000_000L)) < 1_000);
