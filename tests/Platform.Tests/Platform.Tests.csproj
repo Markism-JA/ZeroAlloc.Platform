@@ -20,6 +20,5 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Platform\Platform.csproj" />
-    <ProjectReference Include="..\..\src\Platform.Benchmarking.Harness\Platform.Benchmarking.Harness.csproj" />
   </ItemGroup>
 </Project>
