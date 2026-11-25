@@ -1,0 +1,25 @@
+# .NET build & IDE artifacts
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.idea/
+.vscode/
+
+# Test & Benchmark output
+TestResults/
+BenchmarkDotNet.Artifacts/
+coverage*.xml
+*.coverage
+
+# NuGet packages
+*.nupkg
+*.snupkg
+nupkgs/
+
+# OS files
+.DS_Store
+Thumbs.db

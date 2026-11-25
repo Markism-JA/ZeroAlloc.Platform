@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Platform/Platform.csproj" />
+    <Project Path="src/Platform.Client/Platform.Client.csproj" />
+    <Project Path="src/Platform.Benchmarking.Harness/Platform.Benchmarking.Harness.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Platform.Tests/Platform.Tests.csproj" />
+  </Folder>
+  <Folder Name="/benchmark/">
+    <Project Path="benchmark/Platform.Time/Platform.Time.csproj" />
+  </Folder>
+</Solution>
