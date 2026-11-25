@@ -52,6 +52,9 @@ public sealed unsafe class ThreadParker : IDisposable
     }
 
     public ThreadParker()
+        : this(forceManagedFallback: false) { }
+
+    internal ThreadParker(bool forceManagedFallback)
     {
         _block = HeapAllocator.Allocate(UnifiedBlockSize, BlockAlignment);
         Unsafe.InitBlockUnaligned(_block, 0, UnifiedBlockSize);
@@ -59,7 +62,7 @@ public sealed unsafe class ThreadParker : IDisposable
         _handle = _block;
         _isSleepingState = (int*)((byte*)_block + 32);
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        if (!forceManagedFallback && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             nint hEvent = Kernel32.CreateEventW(null, false, false, null);
             if (hEvent == 0)
@@ -70,7 +73,7 @@ public sealed unsafe class ThreadParker : IDisposable
             }
             *(nint*)_handle = hEvent;
         }
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        else if (!forceManagedFallback && RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
             if (Libc.SemInit(_handle, pshared: 0, value: 0) != 0)
             {
@@ -223,9 +226,10 @@ public sealed unsafe class ThreadParker : IDisposable
 
                 Interlocked.CompareExchange(ref *_isSleepingState, StateParked, StateRunning);
                 nint hEvent = *(nint*)_handle;
+                uint winTimeout = timeoutMs < 0 ? 0xFFFFFFFFu : (uint)timeoutMs;
                 try
                 {
-                    uint result = Kernel32.WaitForSingleObject(hEvent, (uint)timeoutMs);
+                    uint result = Kernel32.WaitForSingleObject(hEvent, winTimeout);
                     return result == Kernel32.WaitObject0;
                 }
                 finally
@@ -253,12 +257,17 @@ public sealed unsafe class ThreadParker : IDisposable
                 {
                     if (timeoutMs < 0)
                     {
-                        while (Volatile.Read(ref _isDisposed) == 0 && Libc.SemWait(_handle) != 0)
+                        while (Volatile.Read(ref _isDisposed) == 0)
                         {
+                            if (Libc.SemWait(_handle) == 0)
+                            {
+                                acquired = true;
+                                break;
+                            }
+
                             if (PlatformCompat.GetLastError() != EINTR)
                                 break;
                         }
-                        acquired = true;
                     }
                     else
                     {

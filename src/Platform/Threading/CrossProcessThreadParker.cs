@@ -16,6 +16,7 @@ public sealed unsafe class CrossProcessThreadParker : IDisposable
 {
     private const int PosixCreateFlags = 0x0040; // O_CREAT
     private const int DefaultPosixMode = 0b110_110_000; // 0660 (rw-rw----)
+    private const int EINTR = 4;
 
     private readonly void* _handle;
     private readonly string _name;
@@ -117,9 +118,13 @@ public sealed unsafe class CrossProcessThreadParker : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Park(int timeoutMs)
     {
+        if (Volatile.Read(ref _isDisposed) != 0)
+            return false;
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            uint result = Kernel32.WaitForSingleObject((nint)_handle, (uint)timeoutMs);
+            uint winTimeout = timeoutMs < 0 ? 0xFFFFFFFFu : (uint)timeoutMs;
+            uint result = Kernel32.WaitForSingleObject((nint)_handle, winTimeout);
 
 #if DEBUG
             if (result == Kernel32.WaitFailed)
@@ -137,14 +142,44 @@ public sealed unsafe class CrossProcessThreadParker : IDisposable
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-            long seconds = new DateTimeOffset(deadline).ToUnixTimeSeconds();
-            long nsec = (deadline.Ticks % TimeSpan.TicksPerSecond) * 100;
+            if (timeoutMs < 0)
+            {
+                while (Volatile.Read(ref _isDisposed) == 0)
+                {
+                    if (Libc.SemWait(_handle) == 0)
+                        return true;
 
-            var ts = new Timespec { TvSec = (nint)seconds, TvNsec = (nint)nsec };
+                    if (PlatformCompat.GetLastError() != EINTR)
+                        return false;
+                }
 
-            int res = Libc.SemTimedWait(_handle, &ts);
-            return res == 0;
+                return false;
+            }
+
+            Timespec ts;
+            Libc.ClockGetTime(Libc.CLOCK_REALTIME, &ts);
+
+            long sec = (long)ts.TvSec + (timeoutMs / 1000);
+            long nsec = ts.TvNsec + ((timeoutMs % 1000) * 1_000_000L);
+            if (nsec >= 1_000_000_000L)
+            {
+                sec += nsec / 1_000_000_000L;
+                nsec %= 1_000_000_000L;
+            }
+
+            ts.TvSec = (nint)sec;
+            ts.TvNsec = (nint)nsec;
+
+            while (Volatile.Read(ref _isDisposed) == 0)
+            {
+                if (Libc.SemTimedWait(_handle, &ts) == 0)
+                    return true;
+
+                if (PlatformCompat.GetLastError() != EINTR)
+                    return false;
+            }
+
+            return false;
         }
 
         return false;

@@ -20,10 +20,12 @@ public class ThreadParkerTests
         Assert.Equal(sizeof(nint) * 3, sizeof(NativeThreadParkerHandle));
     }
 
-    [Fact]
-    public unsafe void InitialState_IsRunning()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public unsafe void InitialState_IsRunning(bool managedFallback)
     {
-        using var parker = new ThreadParker();
+        using var parker = new ThreadParker(managedFallback);
         var handle = parker.NativeHandle;
 
         Assert.True(handle.IsAllocated);
@@ -32,10 +34,12 @@ public class ThreadParkerTests
         Assert.False(parker.IsSleeping);
     }
 
-    [Fact]
-    public void TryArm_TransitionsRunningToParked()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TryArm_TransitionsRunningToParked(bool managedFallback)
     {
-        using var parker = new ThreadParker();
+        using var parker = new ThreadParker(managedFallback);
         var handle = parker.NativeHandle;
 
         Assert.True(parker.TryArm());
@@ -48,10 +52,12 @@ public class ThreadParkerTests
         Assert.False(parker.IsSleeping);
     }
 
-    [Fact]
-    public void TryArm_FailsAndConsumesSignalWhenAlreadySignaled()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TryArm_FailsAndConsumesSignalWhenAlreadySignaled(bool managedFallback)
     {
-        using var parker = new ThreadParker();
+        using var parker = new ThreadParker(managedFallback);
         var handle = parker.NativeHandle;
 
         // Producer signals before consumer arms
@@ -68,10 +74,12 @@ public class ThreadParkerTests
         Assert.Equal(StateRunning, ReadFlag(handle));
     }
 
-    [Fact]
-    public void Park_ConsumesPreSignalImmediately()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Park_ConsumesPreSignalImmediately(bool managedFallback)
     {
-        using var parker = new ThreadParker();
+        using var parker = new ThreadParker(managedFallback);
         var handle = parker.NativeHandle;
 
         handle.Unpark();
@@ -82,10 +90,12 @@ public class ThreadParkerTests
         Assert.Equal(StateRunning, ReadFlag(handle));
     }
 
-    [Fact]
-    public void Park_TimesOutWhenNotSignaled()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Park_TimesOutWhenNotSignaled(bool managedFallback)
     {
-        using var parker = new ThreadParker();
+        using var parker = new ThreadParker(managedFallback);
 
         Assert.True(parker.TryArm());
 
@@ -101,10 +111,12 @@ public class ThreadParkerTests
         );
     }
 
-    [Fact]
-    public async Task Unpark_WakesParkedThreadImmediately()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Unpark_WakesParkedThreadImmediately(bool managedFallback)
     {
-        using var parker = new ThreadParker();
+        using var parker = new ThreadParker(managedFallback);
         var handle = parker.NativeHandle;
         bool parkResult = false;
 
@@ -124,7 +136,6 @@ public class ThreadParkerTests
             "Worker thread failed to arm."
         );
 
-        // Ensure worker has entered kernel wait before unparking
         SpinWait.SpinUntil(
             () => ReadFlag(handle) == StateParked,
             TimeSpan.FromSeconds(1)
@@ -137,19 +148,46 @@ public class ThreadParkerTests
         Assert.Equal(StateRunning, ReadFlag(handle));
     }
 
-    [Fact]
-    public void Unpark_WhileArmed_BypassesKernelWait()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Park_InfiniteTimeout_WakesOnUnpark(bool managedFallback)
     {
-        using var parker = new ThreadParker();
+        using var parker = new ThreadParker(managedFallback);
         var handle = parker.NativeHandle;
+        bool parkResult = false;
 
-        // 1. Arm
-        Assert.True(parker.TryArm());
+        using var armed = new ManualResetEventSlim(false);
 
-        // 2. Upstream signals before Park() is invoked
+        var task = Task.Run(() =>
+        {
+            if (parker.TryArm())
+            {
+                armed.Set();
+                parkResult = parker.Park(timeoutMs: -1);
+            }
+        });
+
+        Assert.True(armed.Wait(TimeSpan.FromSeconds(2)));
+        Thread.Sleep(20);
         handle.Unpark();
 
-        // 3. Park() must observe the signal and return immediately without sleeping
+        await task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(parkResult);
+        Assert.Equal(StateRunning, ReadFlag(handle));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Unpark_WhileArmed_BypassesKernelWait(bool managedFallback)
+    {
+        using var parker = new ThreadParker(managedFallback);
+        var handle = parker.NativeHandle;
+
+        Assert.True(parker.TryArm());
+        handle.Unpark();
+
         var sw = Stopwatch.StartNew();
         bool acquired = parker.Park(timeoutMs: 5000);
         sw.Stop();
@@ -162,13 +200,14 @@ public class ThreadParkerTests
         Assert.Equal(StateRunning, ReadFlag(handle));
     }
 
-    [Fact]
-    public void WakeIfSleeping_WorksIdenticalToUnparkUnderAtomicProtocol()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WakeIfSleeping_WorksIdenticalToUnparkUnderAtomicProtocol(bool managedFallback)
     {
-        using var parker = new ThreadParker();
+        using var parker = new ThreadParker(managedFallback);
         var handle = parker.NativeHandle;
 
-        // Ensure WakeIfSleeping safely signals when armed
         Assert.True(parker.TryArm());
         handle.WakeIfSleeping();
 
@@ -177,13 +216,14 @@ public class ThreadParkerTests
         Assert.Equal(StateRunning, ReadFlag(handle));
     }
 
-    [Fact]
-    public void MultipleUnparks_DoNotCausePhantomParkFallThrough()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MultipleUnparks_DoNotCausePhantomParkFallThrough(bool managedFallback)
     {
-        using var parker = new ThreadParker();
+        using var parker = new ThreadParker(managedFallback);
         var handle = parker.NativeHandle;
 
-        // Flood unpark signals (stress testing POSIX counting semaphore balance)
         for (int i = 0; i < 100; i++)
         {
             handle.Unpark();
@@ -208,10 +248,12 @@ public class ThreadParkerTests
         Assert.Equal(StateRunning, ReadFlag(handle));
     }
 
-    [Fact]
-    public async Task ConcurrentProducers_HammeringWake_WakesThreadSafely()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConcurrentProducers_HammeringWake_WakesThreadSafely(bool managedFallback)
     {
-        using var parker = new ThreadParker();
+        using var parker = new ThreadParker(managedFallback);
         var handle = parker.NativeHandle;
         const int iterations = 50;
 
@@ -254,8 +296,6 @@ public class ThreadParkerTests
             await consumerTask.WaitAsync(TimeSpan.FromSeconds(3));
             Assert.True(woke, $"Consumer timed out waiting on iteration {i}");
 
-            // If a lagging producer latched StateSignaled after consumer completed,
-            // consume that pending signal so the next iteration starts fresh.
             int finalState = ReadFlag(handle);
             Assert.True(
                 finalState is StateRunning or StateSignaled,
@@ -271,10 +311,12 @@ public class ThreadParkerTests
         }
     }
 
-    [Fact]
-    public void Disarm_RestoresRunningStateSafely()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Disarm_RestoresRunningStateSafely(bool managedFallback)
     {
-        using var parker = new ThreadParker();
+        using var parker = new ThreadParker(managedFallback);
         var handle = parker.NativeHandle;
 
         Assert.True(parker.TryArm());
@@ -283,18 +325,18 @@ public class ThreadParkerTests
         parker.Disarm();
         Assert.Equal(StateRunning, ReadFlag(handle));
 
-        // Since it was disarmed, it should arm successfully again
         Assert.True(parker.TryArm());
         parker.Disarm();
         Assert.Equal(StateRunning, ReadFlag(handle));
     }
 
-    [Fact]
-    public async Task Dispose_IsIdempotentAndUnblocksWaiters()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Dispose_IsIdempotentAndUnblocksWaiters(bool managedFallback)
     {
-        var parker = new ThreadParker();
-        var handle = parker.NativeHandle;
-        bool parkCompleted = false;
+        var parker = new ThreadParker(managedFallback);
+        bool exitedPark = false;
 
         using var threadStarted = new ManualResetEventSlim(false);
 
@@ -303,25 +345,20 @@ public class ThreadParkerTests
             if (parker.TryArm())
             {
                 threadStarted.Set();
-                parkCompleted = parker.Park(timeoutMs: 5000);
+                _ = parker.Park(timeoutMs: 5000);
+                exitedPark = true;
             }
         });
 
         Assert.True(threadStarted.Wait(TimeSpan.FromSeconds(2)));
+        Thread.Sleep(20);
 
-        // Wait until armed/parked
-        SpinWait.SpinUntil(
-            () => ReadFlag(handle) != StateRunning,
-            TimeSpan.FromSeconds(1)
-        );
-
-        parker.Unpark();
         parker.Dispose();
 
         // Multiple dispose calls must be idempotent no-ops
         parker.Dispose();
 
         await task.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.True(parkCompleted);
+        Assert.True(exitedPark);
     }
 }

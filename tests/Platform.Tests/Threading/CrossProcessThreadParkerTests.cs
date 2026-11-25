@@ -1,10 +1,15 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Platform.Threading;
 
 namespace Platform.Tests.Threading;
 
 public unsafe class CrossProcessThreadParkerTests
 {
+    private static bool IsSupportedOs =>
+        RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+        || RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+
     private static string GenerateUniqueName() => $"test_parker_{Guid.NewGuid():N}";
 
     #region Argument Validation & Lifecycle
@@ -21,12 +26,25 @@ public unsafe class CrossProcessThreadParkerTests
     }
 
     [Fact]
+    public void OpenOrCreate_UnsupportedOs_ThrowsPlatformNotSupportedException()
+    {
+        if (IsSupportedOs)
+            return;
+
+        Assert.Throws<PlatformNotSupportedException>(() =>
+            CrossProcessThreadParker.OpenOrCreate(GenerateUniqueName(), isOwner: true)
+        );
+    }
+
+    [Fact]
     public void Dispose_CalledMultipleTimes_IsIdempotent()
     {
+        if (!IsSupportedOs)
+            return;
+
         string name = GenerateUniqueName();
         var parker = CrossProcessThreadParker.OpenOrCreate(name, isOwner: true);
 
-        // Multiple dispose invocations must not throw or double-free OS handles
         parker.Dispose();
         parker.Dispose();
         parker.Dispose();
@@ -39,6 +57,9 @@ public unsafe class CrossProcessThreadParkerTests
     [Fact]
     public void Park_WhenNotSignaled_TimesOutAndReturnsFalse()
     {
+        if (!IsSupportedOs)
+            return;
+
         string name = GenerateUniqueName();
         using var parker = CrossProcessThreadParker.OpenOrCreate(name, isOwner: true);
 
@@ -58,10 +79,12 @@ public unsafe class CrossProcessThreadParkerTests
     [Fact]
     public void Park_WhenPreSignaled_ReturnsTrueImmediately()
     {
+        if (!IsSupportedOs)
+            return;
+
         string name = GenerateUniqueName();
         using var parker = CrossProcessThreadParker.OpenOrCreate(name, isOwner: true);
 
-        // Signal BEFORE parking
         parker.Unpark();
 
         var sw = Stopwatch.StartNew();
@@ -75,6 +98,35 @@ public unsafe class CrossProcessThreadParkerTests
         );
     }
 
+    [Fact]
+    public void Park_InfiniteTimeout_WakesWhenUnparked()
+    {
+        if (!IsSupportedOs)
+            return;
+
+        string name = GenerateUniqueName();
+        using var parker = CrossProcessThreadParker.OpenOrCreate(name, isOwner: true);
+        using var started = new ManualResetEventSlim(false);
+
+        var worker = new Thread(() =>
+        {
+            started.Set();
+            Thread.Sleep(25);
+            parker.Unpark();
+        })
+        {
+            IsBackground = true,
+        };
+
+        worker.Start();
+        started.Wait();
+
+        bool woke = parker.Park(-1);
+        worker.Join(TimeSpan.FromSeconds(2));
+
+        Assert.True(woke);
+    }
+
     #endregion
 
     #region Inter-Thread Coordination
@@ -82,6 +134,9 @@ public unsafe class CrossProcessThreadParkerTests
     [Fact]
     public void Park_WhenUnparkedFromBackgroundThread_WakesAndReturnsTrue()
     {
+        if (!IsSupportedOs)
+            return;
+
         string name = GenerateUniqueName();
         using var parker = CrossProcessThreadParker.OpenOrCreate(name, isOwner: true);
 
@@ -116,6 +171,9 @@ public unsafe class CrossProcessThreadParkerTests
     [Fact]
     public void Unpark_StaticRawHandle_WakesParkedThread()
     {
+        if (!IsSupportedOs)
+            return;
+
         string name = GenerateUniqueName();
         using var parker = CrossProcessThreadParker.OpenOrCreate(name, isOwner: true);
         void* rawHandle = parker.Handle;
@@ -128,8 +186,6 @@ public unsafe class CrossProcessThreadParkerTests
         {
             threadStarted.Set();
             Thread.Sleep(30);
-
-            // Cold path invocation using a raw C-ABI pointer (identical to RemoteMailboxSlot)
             CrossProcessThreadParker.Unpark(rawHandle);
         })
         {
@@ -152,12 +208,12 @@ public unsafe class CrossProcessThreadParkerTests
     [Fact]
     public void CrossInstance_SameNamedSignal_UnparksPeerInstance()
     {
+        if (!IsSupportedOs)
+            return;
+
         string sharedName = GenerateUniqueName();
 
-        // Instance A: Owner (simulates local node mailbox receiver)
         using var receiverParker = CrossProcessThreadParker.OpenOrCreate(sharedName, isOwner: true);
-
-        // Instance B: Client (simulates remote sending peer driver)
         using var senderParker = CrossProcessThreadParker.OpenOrCreate(sharedName, isOwner: false);
 
         var readyToPark = new ManualResetEventSlim(false);
@@ -174,13 +230,9 @@ public unsafe class CrossProcessThreadParkerTests
 
         receiverThread.Start();
         readyToPark.Wait();
-
-        // Small delay to ensure receiver entered OS kernel wait
         Thread.Sleep(20);
 
-        // Sender kicks the named event from a separate instance
         senderParker.Unpark();
-
         receiverThread.Join(TimeSpan.FromSeconds(2));
 
         Assert.True(receiverResult, "Receiver did not unpark from cross-instance signal.");
@@ -189,6 +241,9 @@ public unsafe class CrossProcessThreadParkerTests
     [Fact]
     public void PingPong_MultipleCycles_ExecutesWithoutDeadlockOrStateDrift()
     {
+        if (!IsSupportedOs)
+            return;
+
         string nodeToPeerName = GenerateUniqueName();
         string peerToNodeName = GenerateUniqueName();
 
