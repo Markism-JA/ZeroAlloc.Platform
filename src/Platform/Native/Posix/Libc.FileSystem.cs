@@ -161,6 +161,14 @@ internal static partial class Libc
     public static extern int Unlink(string pathname);
 #endif
 
+#if NET7_0_OR_GREATER
+    [LibraryImport(LibName, EntryPoint = "fchmod", SetLastError = true)]
+    public static partial int Fchmod(int fd, ushort mode);
+#else
+    [DllImport(LibName, EntryPoint = "fchmod", SetLastError = true)]
+    public static extern int Fchmod(int fd, ushort mode);
+#endif
+
     /// <summary>
     /// Synchronizes a file's in-core state with storage device (data and metadata).
     /// </summary>

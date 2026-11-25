@@ -186,10 +186,9 @@ public sealed unsafe partial class NativeMemoryMap
 
         if (PosixAbi.IsPosix)
         {
-            PosixOpenFlags oflags = PosixAbi.TranslateOpenFlags(
-                PosixOpenFlags.Create | PosixOpenFlags.Exclusive | PosixOpenFlags.ReadWrite
-            );
-            int fd = Libc.Open(fullPath, oflags, _defaultPosixShmAndFileMode);
+            PosixOpenFlags oflags =
+                PosixOpenFlags.Create | PosixOpenFlags.Exclusive | PosixOpenFlags.ReadWrite;
+            int fd = PosixAbi.OpenFile(fullPath, oflags, _defaultPosixShmAndFileMode);
             if (fd < 0)
             {
                 errorCode = PlatformCompat.GetLastError();

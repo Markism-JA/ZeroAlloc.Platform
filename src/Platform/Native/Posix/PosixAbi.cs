@@ -112,6 +112,20 @@ internal static class PosixAbi
         return name.StartsWith('/') ? name : "/" + name;
     }
 
+    public static int OpenFile(string path, PosixOpenFlags linuxFlags, int mode)
+    {
+        int fd = Libc.Open(path, TranslateOpenFlags(linuxFlags), mode);
+        // On Apple Silicon ARM64, open(path, oflag, ...) is variadic so C# P/Invoke passes `mode`
+        // in register X2 instead of on the stack, creating files with 0000 permissions.
+        // Non-variadic fchmod(fd, mode) restores the exact requested permission bits.
+        if (fd >= 0 && IsMacOS && (linuxFlags & PosixOpenFlags.Create) != 0)
+        {
+            _ = Libc.Fchmod(fd, (ushort)mode);
+        }
+
+        return fd;
+    }
+
     public static int OpenShared(string normalizedPath, PosixOpenFlags linuxFlags, int mode)
     {
         if (IsMacOS)
@@ -121,7 +135,7 @@ internal static class PosixAbi
                 Directory.CreateDirectory(MacShmDirectory);
             }
 
-            return Libc.Open(normalizedPath, TranslateOpenFlags(linuxFlags), mode);
+            return OpenFile(normalizedPath, linuxFlags, mode);
         }
 
         return Libc.Shm_open(normalizedPath, linuxFlags, mode);

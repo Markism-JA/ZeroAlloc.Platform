@@ -82,7 +82,11 @@ public readonly unsafe struct NativeThreadParkerHandle
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            Kernel32.SetEvent((nint)_osHandle);
+            nint hEvent = *(nint*)_osHandle;
+            if (hEvent != 0)
+            {
+                Kernel32.SetEvent(hEvent);
+            }
         }
     }
 }
