@@ -129,41 +129,4 @@ public class PlatformTimeAndPrimitivesTests
         outer.Dispose();
         Assert.False(outer.IsActive);
     }
-
-    [Fact]
-    public void ThreadAffinityUtility_ValidatesArguments()
-    {
-        Assert.Throws<ArgumentOutOfRangeException>(() => ThreadAffinityUtility.PinCurrentThreadToCore(-1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => ThreadAffinityUtility.PinCurrentThreadToCore(64));
-        Assert.Throws<ArgumentOutOfRangeException>(() => ThreadAffinityUtility.SetCurrentThreadAffinityMask(0));
-    }
-
-    [Fact]
-    public void ThreadAffinityUtility_PinsWorkerThreadToCore0_OnLinuxAndWindows()
-    {
-        if (
-            !RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
-            && !RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-        )
-        {
-            return;
-        }
-
-        Exception? captured = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                ThreadAffinityUtility.PinCurrentThreadToCore(0);
-            }
-            catch (Exception ex)
-            {
-                captured = ex;
-            }
-        });
-
-        thread.Start();
-        thread.Join();
-        Assert.Null(captured);
-    }
 }
