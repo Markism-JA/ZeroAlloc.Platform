@@ -1,0 +1,24 @@
+name: Feature or Design Proposal
+description: Propose a new OS primitive, API improvement, or benchmark/test addition
+title: "[Proposal]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Use Case
+      description: What workload or OS-level bottleneck are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Design / API
+      description: Sketch the proposed type/method signatures, ownership rules, and cross-platform behavior (Linux, Windows, macOS).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered existing primitives in ZeroAlloc.Platform or standard .NET APIs?

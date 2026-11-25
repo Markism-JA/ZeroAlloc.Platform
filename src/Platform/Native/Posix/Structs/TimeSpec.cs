@@ -3,12 +3,19 @@ using System.Runtime.InteropServices;
 
 namespace Platform.Native.Posix.Structs;
 
+/// <summary>
+/// POSIX <c>struct timespec</c> layout (seconds + nanoseconds).
+/// </summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct Timespec
 {
+    /// <summary>Whole seconds component (<c>tv_sec</c>).</summary>
     public nint TvSec;
+
+    /// <summary>Sub-second nanoseconds component (<c>tv_nsec</c>, 0..999,999,999).</summary>
     public nint TvNsec;
 
+    /// <summary>Adds <paramref name="milliseconds"/> to this timestamp, normalizing nanosecond overflow/underflow.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void AddMilliseconds(int milliseconds)
     {

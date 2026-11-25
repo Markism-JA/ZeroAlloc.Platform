@@ -2,22 +2,26 @@ using System.Runtime.InteropServices;
 
 namespace Platform.Time;
 
+/// <summary>
+/// 64-byte cache-line-aligned clock control block supporting live hardware sampling
+/// or deterministic manual time overrides in shared or unmanaged memory.
+/// </summary>
 [StructLayout(LayoutKind.Explicit, Size = 64)]
 public struct PlatformClockBlock
 {
-    // Epoch timestamp in nanoseconds (fits standard wire envelopes)
+    /// <summary>Manual UTC Unix epoch timestamp in nanoseconds.</summary>
     [FieldOffset(0)]
     public long UtcEpochNs;
 
-    // Epoch timestamp in milliseconds for coarse sweeps and TTLs
+    /// <summary>Manual UTC Unix epoch timestamp in milliseconds.</summary>
     [FieldOffset(8)]
     public long UtcEpochMs;
 
-    // Monotonic counter (increments every time the clock advances)
+    /// <summary>Monotonic counter incremented each time manual time is updated.</summary>
     [FieldOffset(16)]
     public long MonotonicTicks;
 
-    // 0 = Normal/Live (updated by ticker), 1 = Simulated/Manual (driven externally)
+    /// <summary>Mode flag: <c>0</c> for live hardware clock, non-zero for deterministic manual mode.</summary>
     [FieldOffset(24)]
     public int IsManual;
 }

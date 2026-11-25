@@ -9,10 +9,19 @@ using Platform.Native.Windows;
 
 namespace Platform.Threading;
 
+/// <summary>
+/// Zero-allocation in-process thread parker using an atomic two-phase handshake (<see cref="TryArm"/> / <see cref="Disarm"/> / <see cref="Park"/> / <see cref="Unpark"/>).
+/// Backed by POSIX unnamed semaphores on Linux, Win32 anonymous events on Windows, and a managed <see cref="AutoResetEvent"/> fallback on macOS/mobile.
+/// </summary>
 public sealed unsafe class ThreadParker : IDisposable
 {
+    /// <summary>Consumer thread is actively running (not armed to park).</summary>
     public const int StateRunning = 0;
+
+    /// <summary>Consumer thread is armed or blocked in kernel wait.</summary>
     public const int StateParked = 1;
+
+    /// <summary>A producer latched a wake signal prior to parking.</summary>
     public const int StateSignaled = 2;
 
     private const int EINTR = 4;
@@ -34,6 +43,7 @@ public sealed unsafe class ThreadParker : IDisposable
     private int _isDisposed;
     private int _activeWaiters;
 
+    /// <summary>Blittable producer handle for issuing zero-allocation unpark signals.</summary>
     public NativeThreadParkerHandle NativeHandle =>
         _managedEvent != null
             ? new NativeThreadParkerHandle(
@@ -43,14 +53,17 @@ public sealed unsafe class ThreadParker : IDisposable
             )
             : new NativeThreadParkerHandle(_handle, _isSleepingState);
 
+    /// <summary>Direct pointer to the 64-byte-aligned atomic sleep state flag.</summary>
     public int* SleepingStatePointer => _isSleepingState;
 
+    /// <summary>True when the parker state is currently <see cref="StateParked"/>.</summary>
     public bool IsSleeping
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => Volatile.Read(ref *_isSleepingState) == StateParked;
     }
 
+    /// <summary>Allocates a 64-byte-aligned parker state block and initializes the underlying OS wake primitive.</summary>
     public ThreadParker()
         : this(forceManagedFallback: false) { }
 
@@ -166,6 +179,9 @@ public sealed unsafe class ThreadParker : IDisposable
         }
     }
 
+    /// <summary>
+    /// Cancels a prior <see cref="TryArm"/> transition if work was found before calling <see cref="Park"/>.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Disarm()
     {
@@ -175,6 +191,10 @@ public sealed unsafe class ThreadParker : IDisposable
         Interlocked.CompareExchange(ref *_isSleepingState, StateRunning, StateParked);
     }
 
+    /// <summary>
+    /// Blocks the calling thread until unparked or <paramref name="timeoutMs"/> milliseconds elapse (<c>-1</c> for infinite wait).
+    /// Returns true if woken by an unpark signal, or false on timeout/disposal.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Park(int timeoutMs)
     {
@@ -319,6 +339,7 @@ public sealed unsafe class ThreadParker : IDisposable
         }
     }
 
+    /// <summary>Signals the parker, waking the parked thread or latching <see cref="StateSignaled"/> if running.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Unpark() => NativeHandle.Unpark();
 
@@ -334,6 +355,7 @@ public sealed unsafe class ThreadParker : IDisposable
         }
     }
 
+    /// <summary>Unblocks any active waiter, destroys the OS synchronization primitive, and frees the unmanaged state block.</summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _isDisposed, 1) != 0)

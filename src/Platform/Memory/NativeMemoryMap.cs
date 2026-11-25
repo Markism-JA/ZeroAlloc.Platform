@@ -33,6 +33,7 @@ namespace Platform.Memory;
 /// </remarks>
 public sealed unsafe partial class NativeMemoryMap : IDisposable
 {
+    /// <summary>Default timeout in seconds when waiting for a peer to finish initializing a shared segment.</summary>
     public const int DefaultHandshakeTimeoutSeconds = 5;
 
     private const int _anonymousFd = -1;
@@ -883,6 +884,10 @@ public sealed unsafe partial class NativeMemoryMap : IDisposable
 
     #endregion
 
+    /// <summary>
+    /// Unmaps the virtual memory view, closes OS handles/file descriptors, and unlinks owner-created shared IPC segments.
+    /// Safe to call multiple times.
+    /// </summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _isDisposed, 1) != 0)

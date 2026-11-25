@@ -2,12 +2,17 @@ using System.Runtime.CompilerServices;
 
 namespace Platform.Memory.Shared;
 
+/// <summary>
+/// Packs and unpacks 4-byte ASCII FourCC identifiers into little-endian <see cref="uint"/> tags.
+/// </summary>
 public static class FourCC
 {
+    /// <summary>Encodes four ASCII characters into a little-endian 32-bit FourCC tag.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint Make(char a, char b, char c, char d) =>
         (byte)a | ((uint)(byte)b << 8) | ((uint)(byte)c << 16) | ((uint)(byte)d << 24);
 
+    /// <summary>Encodes a 4-character span into a little-endian 32-bit FourCC tag.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint Make(ReadOnlySpan<char> code)
     {
@@ -22,6 +27,7 @@ public static class FourCC
             | ((uint)(byte)code[3] << 24);
     }
 
+    /// <summary>Decodes a little-endian 32-bit FourCC tag back into a 4-character string.</summary>
     public static string ToString(uint code)
     {
         Span<char> chars =

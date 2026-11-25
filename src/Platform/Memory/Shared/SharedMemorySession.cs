@@ -4,6 +4,10 @@ using Platform.Internal;
 
 namespace Platform.Memory.Shared;
 
+/// <summary>
+/// Manages the lifecycle, Page 0 superblock handshake, heartbeat liveness, and O(1) region projections
+/// for a partitioned shared memory or persistent memory-mapped file segment.
+/// </summary>
 public sealed unsafe class SharedMemorySession : IDisposable
 {
     private readonly NativeMemoryMap _map;
@@ -12,11 +16,22 @@ public sealed unsafe class SharedMemorySession : IDisposable
     private readonly bool _isOwner;
     private int _isDisposed;
 
+    /// <summary>Logical node or process identifier stored in the superblock.</summary>
     public ushort NodeId => _superblock->NodeId;
+
+    /// <summary>Total byte length of the formatted segment.</summary>
     public nuint TotalLength => _superblock->TotalByteLength;
+
+    /// <summary>True if this instance formatted and owns the segment lifecycle.</summary>
     public bool IsOwner => _isOwner;
+
+    /// <summary>Current atomic <see cref="SharedMemoryState"/> of the segment.</summary>
     public SharedMemoryState State => (SharedMemoryState)Volatile.Read(ref _superblock->State);
+
+    /// <summary>Stopwatch timestamp captured when the superblock was formatted.</summary>
     public long CreatedTimestampTicks => _superblock->CreatedTimestampTicks;
+
+    /// <summary>The underlying OS <see cref="NativeMemoryMap"/> backing this session.</summary>
     public NativeMemoryMap UnderlyingMap => _map;
 
     private SharedMemorySession(NativeMemoryMap map, bool isOwner)
@@ -120,6 +135,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
 
     #region Unified Factories (Persistent Disk Files)
 
+    /// <summary>Creates a new persistent memory-mapped file, formats its superblock, and publishes it as <see cref="SharedMemoryState.Ready"/>.</summary>
     public static SharedMemorySession CreateFile(
         string filePath,
         uint magic,
@@ -136,6 +152,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
         return Create(map, magic, abiVersion, nodeId, plan);
     }
 
+    /// <summary>Opens an existing persistent memory-mapped file and validates its superblock magic, ABI version, and partition table.</summary>
     public static SharedMemorySession OpenFile(
         string filePath,
         uint expectedMagic,
@@ -156,6 +173,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
 
     #region Low-Level Lifecycle Formatting
 
+    /// <summary>Formats an already-mapped <see cref="NativeMemoryMap"/> according to <paramref name="plan"/> and marks it <see cref="SharedMemoryState.Ready"/>.</summary>
     public static SharedMemorySession Create(
         NativeMemoryMap map,
         uint magic,
@@ -176,6 +194,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
         return new SharedMemorySession(map, isOwner: true);
     }
 
+    /// <summary>Waits for an existing <see cref="NativeMemoryMap"/> to reach <see cref="SharedMemoryState.Ready"/> and validates its superblock invariants.</summary>
     public static SharedMemorySession Attach(
         NativeMemoryMap map,
         uint expectedMagic,
@@ -249,6 +268,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
 
     #region Fast O(1) Region Access
 
+    /// <summary>Returns the pre-resolved <see cref="SharedMemoryRegion"/> matching <paramref name="tag"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public SharedMemoryRegion GetRegion(uint tag)
     {
@@ -263,6 +283,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
         throw new KeyNotFoundException($"Partition region tag '0x{tag:X8}' not found.");
     }
 
+    /// <summary>Returns the pre-resolved <see cref="SharedMemoryRegion"/> matching enum <paramref name="tag"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public SharedMemoryRegion GetRegion<TEnum>(TEnum tag)
         where TEnum : struct, Enum
@@ -278,9 +299,11 @@ public sealed unsafe class SharedMemorySession : IDisposable
         return GetRegion(rawTag);
     }
 
+    /// <summary>Returns a mutable byte span over the partition identified by <paramref name="tag"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Span<byte> GetRegionSpan(uint tag) => GetRegion(tag).AsSpan();
 
+    /// <summary>Returns a typed span of <typeparamref name="T"/> over the partition identified by <paramref name="tag"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Span<T> GetRegionSpan<T>(uint tag)
         where T : unmanaged => GetRegion(tag).AsSpan<T>();
@@ -289,6 +312,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
 
     #region Health, Heartbeat & Diagnostics
 
+    /// <summary>Updates the superblock's heartbeat timestamp with the current <see cref="Stopwatch.GetTimestamp"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void BeatHeartbeat()
     {
@@ -296,6 +320,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
         Volatile.Write(ref _superblock->HeartbeatTicks, Stopwatch.GetTimestamp());
     }
 
+    /// <summary>Returns elapsed <see cref="Stopwatch"/> ticks since the last heartbeat, or <see cref="long.MaxValue"/> if never beaten.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public long GetHeartbeatAgeTicks()
     {
@@ -303,6 +328,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
         return last == 0 ? long.MaxValue : Stopwatch.GetTimestamp() - last;
     }
 
+    /// <summary>Returns the elapsed duration since the last heartbeat, or <see cref="TimeSpan.MaxValue"/> if never beaten.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public TimeSpan GetHeartbeatAge()
     {
@@ -312,6 +338,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
             : TimeSpan.FromSeconds((double)ticks / Stopwatch.Frequency);
     }
 
+    /// <summary>Returns true if the peer has beaten its heartbeat within <paramref name="timeout"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool IsPeerAlive(TimeSpan timeout) => GetHeartbeatAge() <= timeout;
 
@@ -358,6 +385,7 @@ public sealed unsafe class SharedMemorySession : IDisposable
         }
     }
 
+    /// <summary>Marks the superblock as <see cref="SharedMemoryState.TornDown"/> if owner, and disposes the underlying memory map.</summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _isDisposed, 1) != 0)

@@ -1,0 +1,60 @@
+name: Bug Report
+description: Report a bug, crash, or platform-specific issue in ZeroAlloc.Platform
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an issue. Because `ZeroAlloc.Platform` interacts with OS kernels, shared memory, and `unsafe` pointers, environment details are critical for reproducing bugs.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of what went wrong and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal Reproduction
+      description: Minimal code snippet or steps to reproduce the issue (crash, hang, native error, or unexpected behavior).
+      render: csharp
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ZeroAlloc.Platform Version
+      placeholder: e.g., 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: tfm
+    attributes:
+      label: Target Framework
+      options:
+        - net10.0
+        - netstandard2.1
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System & Architecture
+      options:
+        - Windows x64
+        - Windows ARM64
+        - Linux x64
+        - Linux ARM64
+        - macOS ARM64 (Apple Silicon)
+        - macOS x64
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context / Logs
+      description: Exception stack traces, native errno / Win32 error codes, or hardware/OS notes (e.g., page size, container/W^X restrictions).

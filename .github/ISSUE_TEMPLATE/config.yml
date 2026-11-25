@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a Security / Memory-Safety Vulnerability
+    url: https://github.com/Markism-JA/ZeroAlloc.Platform/security/advisories/new
+    about: Please report memory-safety or security issues privately instead of opening a public issue.

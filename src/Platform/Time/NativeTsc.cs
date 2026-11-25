@@ -7,6 +7,10 @@ using Platform.Native.Windows;
 
 namespace Platform.Time;
 
+/// <summary>
+/// High-resolution UTC-anchored monotonic clock using hardware <c>RDTSC</c> + lock-free Seqlock on x64,
+/// with an automatic UTC-anchored <see cref="Stopwatch"/> fallback on ARM64 and W^X-restricted runtimes.
+/// </summary>
 public static unsafe class NativeTsc
 {
 #if NET7_0_OR_GREATER
@@ -92,6 +96,7 @@ public static unsafe class NativeTsc
         );
     }
 
+    /// <summary>Gets the current monotonic UTC Unix epoch timestamp in nanoseconds.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long NowNs()
     {
@@ -129,6 +134,7 @@ public static unsafe class NativeTsc
         return FallbackUnixEpochAnchorNs + (long)(elapsedTicks * TicksToNs);
     }
 
+    /// <summary>Gets the current monotonic UTC Unix epoch timestamp in milliseconds.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long NowMs() => NowNs() / 1_000_000L;
 

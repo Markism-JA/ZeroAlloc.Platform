@@ -185,6 +185,7 @@ public sealed unsafe class CrossProcessThreadParker : IDisposable
         return false;
     }
 
+    /// <summary>Closes the OS handle and, if owner on Linux, unlinks the named POSIX semaphore. Safe to call multiple times.</summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _isDisposed, 1) != 0)

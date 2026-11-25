@@ -13,6 +13,10 @@ using Platform.Native.Windows.Structs;
 
 namespace Platform.Memory.Scanner;
 
+/// <summary>
+/// Zero-allocation scanner for discovering active <see cref="SharedMemorySuperblock"/> segments
+/// across Linux (<c>/dev/shm</c>), Windows (<c>\BaseNamedObjects</c>), and macOS (<c>/tmp/zeroalloc_shm</c>).
+/// </summary>
 public static unsafe class SharedMemoryScanner
 {
     private const string _posixShmPath = "/dev/shm";

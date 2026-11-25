@@ -1,0 +1,56 @@
+name: Publish NuGet Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    name: Test, Pack & Push to NuGet.org
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies
+        run: dotnet restore ZeroAlloc.Platform.slnx
+
+      - name: Verify netstandard2.1 build
+        run: dotnet build src/Platform/Platform.csproj -c Release -f netstandard2.1 --no-restore
+
+      - name: Run tests
+        run: dotnet test ZeroAlloc.Platform.slnx -c Release --no-restore
+
+      - name: Pack NuGet & Symbols
+        run: dotnet pack src/Platform/Platform.csproj -c Release --no-restore -o ./nupkgs
+
+      - name: NuGet Login (Trusted Publishing)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: Markism-JA
+
+      - name: Push to NuGet.org
+        run: |
+          dotnet nuget push ./nupkgs/*.nupkg \
+            --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./nupkgs/*
+          generate_release_notes: true

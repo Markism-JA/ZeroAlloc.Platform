@@ -14,6 +14,9 @@ namespace Platform.Diagnostics;
 /// </summary>
 public static unsafe class NativeDiagnostics
 {
+    /// <summary>
+    /// Synchronously writes a UTF-8 byte span directly to OS standard error (<c>stderr</c>) with zero managed allocations.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Write(ReadOnlySpan<byte> utf8Message)
     {
@@ -49,6 +52,9 @@ public static unsafe class NativeDiagnostics
         Console.Error.Write(Encoding.UTF8.GetString(utf8Message));
     }
 
+    /// <summary>
+    /// Writes a UTF-8 fatal message directly to <c>stderr</c> and immediately terminates the process via <see cref="Environment.FailFast(string)"/>.
+    /// </summary>
     [DoesNotReturn]
     [MethodImpl(MethodImplOptions.NoInlining)]
     public static void FailFast(ReadOnlySpan<byte> utf8Message)
@@ -57,6 +63,9 @@ public static unsafe class NativeDiagnostics
         Environment.FailFast(string.Empty);
     }
 
+    /// <summary>
+    /// Writes a fatal message to standard error and immediately terminates the process via <see cref="Environment.FailFast(string)"/>.
+    /// </summary>
     [DoesNotReturn]
     [MethodImpl(MethodImplOptions.NoInlining)]
     public static void FailFast(string message)

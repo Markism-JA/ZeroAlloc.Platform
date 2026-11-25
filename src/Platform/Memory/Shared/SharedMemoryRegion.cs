@@ -14,14 +14,20 @@ public readonly unsafe struct SharedMemoryRegion
     private readonly uint _tag;
     private readonly nuint _offset;
 
+    /// <summary>Base unmanaged pointer to the start of this partition.</summary>
     public byte* Pointer
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => _pointer;
     }
 
+    /// <summary>Total byte length of this partition.</summary>
     public nuint Length => _length;
+
+    /// <summary>32-bit partition identifier tag.</summary>
     public uint Tag => _tag;
+
+    /// <summary>Byte offset of this partition from the start of the underlying mapped segment.</summary>
     public nuint Offset => _offset;
 
     internal SharedMemoryRegion(byte* pointer, nuint length, uint tag, nuint offset)
@@ -32,12 +38,15 @@ public readonly unsafe struct SharedMemoryRegion
         _offset = offset;
     }
 
+    /// <summary>Returns a mutable byte span covering the entire partition.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Span<byte> AsSpan() => new(_pointer, (int)_length);
 
+    /// <summary>Returns a read-only byte span covering the entire partition.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ReadOnlySpan<byte> AsReadOnlySpan() => new(_pointer, (int)_length);
 
+    /// <summary>Projects the entire partition as a contiguous span of unmanaged <typeparamref name="T"/> elements.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Span<T> AsSpan<T>()
         where T : unmanaged
@@ -47,6 +56,7 @@ public readonly unsafe struct SharedMemoryRegion
         return new Span<T>(_pointer, count);
     }
 
+    /// <summary>Projects a bounds-checked slice of <paramref name="count"/> elements of <typeparamref name="T"/> starting at <paramref name="offsetBytes"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Span<T> AsSpan<T>(int offsetBytes, int count)
         where T : unmanaged
@@ -61,6 +71,7 @@ public readonly unsafe struct SharedMemoryRegion
         return new Span<T>(_pointer + offsetBytes, count);
     }
 
+    /// <summary>Returns a bounds-checked managed reference to an unmanaged <typeparamref name="T"/> at <paramref name="offsetBytes"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref T AsRef<T>(int offsetBytes = 0)
         where T : unmanaged
@@ -73,6 +84,7 @@ public readonly unsafe struct SharedMemoryRegion
         return ref Unsafe.AsRef<T>(_pointer + offsetBytes);
     }
 
+    /// <summary>Writes an unmanaged value at <paramref name="offsetBytes"/> (bounds-checked, unaligned-safe).</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Write<T>(int offsetBytes, in T value)
         where T : unmanaged
@@ -85,6 +97,7 @@ public readonly unsafe struct SharedMemoryRegion
         Unsafe.WriteUnaligned(_pointer + offsetBytes, value);
     }
 
+    /// <summary>Reads an unmanaged value from <paramref name="offsetBytes"/> (bounds-checked, unaligned-safe).</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Read<T>(int offsetBytes)
         where T : unmanaged

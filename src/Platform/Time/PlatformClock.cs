@@ -2,14 +2,24 @@ using System.Runtime.CompilerServices;
 
 namespace Platform.Time;
 
+/// <summary>
+/// Zero-allocation clock facade reading either the live <see cref="NativeTsc"/> clock
+/// or a deterministic manual <see cref="PlatformClockBlock"/>.
+/// </summary>
 public static unsafe class PlatformClock
 {
+    /// <summary>Gets the current live UTC Unix epoch timestamp in nanoseconds.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long NowNs() => NativeTsc.NowNs();
 
+    /// <summary>Gets the current live UTC Unix epoch timestamp in milliseconds.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long NowMs() => NativeTsc.NowMs();
 
+    /// <summary>
+    /// Gets the current UTC Unix epoch timestamp in nanoseconds from <paramref name="clock"/> if in manual mode,
+    /// or from <see cref="NativeTsc.NowNs"/> when <paramref name="clock"/> is null, near-null (&lt; 4096), or live.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long NowNs(PlatformClockBlock* clock)
     {
@@ -22,6 +32,10 @@ public static unsafe class PlatformClock
         return Volatile.Read(ref clock->UtcEpochNs);
     }
 
+    /// <summary>
+    /// Gets the current UTC Unix epoch timestamp in milliseconds from <paramref name="clock"/> if in manual mode,
+    /// or from <see cref="NativeTsc.NowMs"/> when <paramref name="clock"/> is null, near-null (&lt; 4096), or live.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long NowMs(PlatformClockBlock* clock)
     {
@@ -34,7 +48,7 @@ public static unsafe class PlatformClock
     }
 
     /// <summary>
-    /// Forces manual time mode for deterministic testing without Thread.Sleep.
+    /// Switches <paramref name="clock"/> into deterministic manual mode and sets its UTC Unix epoch timestamp in nanoseconds.
     /// </summary>
     public static void SetManualTime(PlatformClockBlock* clock, long utcEpochNs)
     {
@@ -44,6 +58,9 @@ public static unsafe class PlatformClock
         Interlocked.Increment(ref clock->MonotonicTicks);
     }
 
+    /// <summary>
+    /// Advances a manual <paramref name="clock"/> forward by <paramref name="delta"/>.
+    /// </summary>
     public static void AdvanceTime(PlatformClockBlock* clock, TimeSpan delta)
     {
         long current = Volatile.Read(ref clock->UtcEpochNs);
@@ -51,7 +68,7 @@ public static unsafe class PlatformClock
     }
 
     /// <summary>
-    /// Restores the clock block back to live hardware sampling mode.
+    /// Restores <paramref name="clock"/> back to live hardware sampling mode.
     /// </summary>
     public static void ResetToLive(PlatformClockBlock* clock)
     {

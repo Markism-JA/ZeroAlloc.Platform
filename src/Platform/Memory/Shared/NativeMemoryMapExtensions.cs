@@ -4,6 +4,9 @@ using System.Runtime.CompilerServices;
 
 namespace Platform.Memory.Shared;
 
+/// <summary>
+/// Typed zero-allocation projection, copy, and clear helpers over <see cref="NativeMemoryMap"/>.
+/// </summary>
 public static unsafe class NativeMemoryMapExtensions
 {
     /// <summary>

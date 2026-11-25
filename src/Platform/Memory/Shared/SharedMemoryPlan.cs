@@ -3,6 +3,9 @@ using Platform.Internal;
 
 namespace Platform.Memory.Shared;
 
+/// <summary>
+/// Declarative layout builder that computes page-aligned partition offsets and formats Page 0 of a <see cref="SharedMemorySuperblock"/>.
+/// </summary>
 public sealed class SharedMemoryPlan
 {
     private readonly struct PlannedRegion(uint tag, nuint length, nuint alignment)
@@ -19,6 +22,7 @@ public sealed class SharedMemoryPlan
             ? PlatformCompat.SystemPageSize
             : SharedMemorySuperblock.SuperblockSize;
 
+    /// <summary>Adds a sub-partition identified by a raw 32-bit tag.</summary>
     public SharedMemoryPlan AddRegion(uint tag, nuint byteCount, nuint alignment = 64)
     {
         if (_regions.Count >= SharedMemorySuperblock.MaxRegions)
@@ -61,6 +65,7 @@ public sealed class SharedMemoryPlan
         return AddRegion(rawTag, byteCount, alignment);
     }
 
+    /// <summary>Calculates the total byte size required for Page 0 plus all aligned partitions.</summary>
     public nuint CalculateTotalBytes()
     {
         // The first user partition begins at Page 1, isolating Page 0
@@ -119,6 +124,7 @@ public sealed class SharedMemoryPlan
         }
     }
 
+    /// <summary>Rounds <paramref name="value"/> up to the nearest multiple of power-of-two <paramref name="alignment"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static nuint AlignUp(nuint value, nuint alignment) =>
         (value + (alignment - 1)) & ~(alignment - 1);

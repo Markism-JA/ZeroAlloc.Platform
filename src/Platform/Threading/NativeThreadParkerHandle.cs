@@ -5,6 +5,9 @@ using Platform.Native.Windows;
 
 namespace Platform.Threading;
 
+/// <summary>
+/// Blittable value-type handle for unparking a <see cref="ThreadParker"/> from producer threads without touching managed references.
+/// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 8)]
 public readonly unsafe struct NativeThreadParkerHandle
 {
@@ -16,6 +19,7 @@ public readonly unsafe struct NativeThreadParkerHandle
     private readonly int* _isSleepingFlag;
     private readonly delegate*<void*, void> _managedUnparkCallback;
 
+    /// <summary>Creates a native parker handle bound to an OS synchronization primitive and an atomic state flag pointer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public NativeThreadParkerHandle(void* osHandle, int* isSleepingFlag)
     {
@@ -36,8 +40,13 @@ public readonly unsafe struct NativeThreadParkerHandle
         _managedUnparkCallback = managedUnparkCallback;
     }
 
+    /// <summary>Raw pointer to the underlying OS primitive or managed trampoline context.</summary>
     public void* RawHandle => _osHandle;
+
+    /// <summary>Pointer to the 64-byte-aligned atomic sleep state flag (<c>0</c>=Running, <c>1</c>=Parked, <c>2</c>=Signaled).</summary>
     public int* SleepingFlag => _isSleepingFlag;
+
+    /// <summary>True if this handle points to an initialized parker.</summary>
     public bool IsAllocated => _osHandle != null;
 
     /// <summary>
