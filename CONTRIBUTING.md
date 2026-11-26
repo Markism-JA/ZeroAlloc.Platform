@@ -6,6 +6,7 @@ Thank you for your interest in contributing to ZeroAlloc.Platform. This is a foc
 
 - Open an issue first before starting work on new OS primitives, shared-memory layout changes, or public API additions so we can align on scope and platform support.
 - Bug fixes, documentation improvements, and tests are always welcome via pull request.
+- AI-assisted contributions are fine, provided you have read the relevant module, understand its safety invariants, and take full responsibility for every line in the PR.
 - Maintenance happens on a best-effort schedule; PRs outside the library's core scope may be declined.
 
 ## Development Requirements
